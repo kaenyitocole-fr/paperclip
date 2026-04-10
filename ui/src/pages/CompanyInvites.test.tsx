@@ -161,14 +161,15 @@ describe("CompanyInvites", () => {
     expect(container.textContent).not.toContain("Expired invites");
     expect(container.textContent).not.toContain("OpenClaw shortcut");
 
-    const roleSelect = container.querySelector("select") as HTMLSelectElement | null;
-    expect(roleSelect).not.toBeNull();
+    expect(container.textContent).toContain("Choose a role");
+    expect(container.textContent).toContain("Each invite link is single-use.");
+    expect(container.textContent).toContain("Can create agents, invite users, assign tasks, and approve join requests.");
+    expect(container.textContent).toContain("Everything in Admin, plus managing members and permission grants.");
 
     await act(async () => {
-      if (roleSelect) {
-        roleSelect.value = "viewer";
-        roleSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      }
+      const viewerRadio = container.querySelector('input[type="radio"][value="viewer"]') as HTMLInputElement | null;
+      viewerRadio?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      viewerRadio?.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     const buttons = Array.from(container.querySelectorAll("button"));

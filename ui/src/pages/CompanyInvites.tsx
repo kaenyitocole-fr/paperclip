@@ -10,6 +10,33 @@ import { useToast } from "@/context/ToastContext";
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 
+const inviteRoleOptions = [
+  {
+    value: "viewer",
+    label: "Viewer",
+    description: "Can view company work and follow along without operational permissions.",
+    gets: "No built-in grants.",
+  },
+  {
+    value: "operator",
+    label: "Operator",
+    description: "Recommended for people who need to help run work without managing access.",
+    gets: "Can assign tasks.",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    description: "Recommended for operators who need to invite people, create agents, and approve joins.",
+    gets: "Can create agents, invite users, assign tasks, and approve join requests.",
+  },
+  {
+    value: "owner",
+    label: "Owner",
+    description: "Full company access, including membership and permission management.",
+    gets: "Everything in Admin, plus managing members and permission grants.",
+  },
+] as const;
+
 export function CompanyInvites() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -115,25 +142,49 @@ export function CompanyInvites() {
         <div className="space-y-1">
           <h2 className="text-sm font-semibold">Create invite</h2>
           <p className="text-sm text-muted-foreground">
-            Generate a human invite link and choose the default role it should request.
+            Generate a human invite link and choose the default access it should request.
           </p>
         </div>
 
-        <label className="block max-w-sm space-y-2 text-sm">
-          <span className="font-medium">Default human role</span>
-          <select
-            className="w-full rounded-md border border-border bg-background px-3 py-2"
-            value={humanRole}
-            onChange={(event) =>
-              setHumanRole(event.target.value as "owner" | "admin" | "operator" | "viewer")
-            }
-          >
-            <option value="owner">Owner</option>
-            <option value="admin">Admin</option>
-            <option value="operator">Operator</option>
-            <option value="viewer">Viewer</option>
-          </select>
-        </label>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">Choose a role</legend>
+          <div className="rounded-xl border border-border">
+            {inviteRoleOptions.map((option, index) => {
+              const checked = humanRole === option.value;
+              return (
+                <label
+                  key={option.value}
+                  className={`flex cursor-pointer gap-3 px-4 py-4 ${index > 0 ? "border-t border-border" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="invite-role"
+                    value={option.value}
+                    checked={checked}
+                    onChange={() => setHumanRole(option.value)}
+                    className="mt-1 h-4 w-4 border-border text-foreground"
+                  />
+                  <span className="min-w-0 space-y-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{option.label}</span>
+                      {option.value === "operator" ? (
+                        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                          Default
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="block max-w-2xl text-sm text-muted-foreground">{option.description}</span>
+                    <span className="block text-sm text-foreground">{option.gets}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">
+          Each invite link is single-use. The first successful use creates a join request and consumes the link, even before approval.
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={() => createInviteMutation.mutate()} disabled={createInviteMutation.isPending}>
