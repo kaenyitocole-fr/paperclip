@@ -65,6 +65,10 @@ import { Identity } from "./Identity";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { AgentIcon } from "./AgentIconPicker";
 import { restoreSubmittedCommentDraft } from "../lib/comment-submit-draft";
+import {
+  captureComposerViewportSnapshot,
+  restoreComposerViewportSnapshot,
+} from "../lib/issue-chat-scroll";
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import { timeAgo } from "../lib/timeAgo";
 import {
@@ -1615,6 +1619,13 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  function queueViewportRestore(snapshot: ReturnType<typeof captureComposerViewportSnapshot>) {
+    if (!snapshot) return;
+    requestAnimationFrame(() => {
+      restoreComposerViewportSnapshot(snapshot, composerContainerRef.current);
+    });
+  }
+
   function focusComposer() {
     if (typeof composerContainerRef.current?.scrollIntoView === "function") {
       composerContainerRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1668,11 +1679,12 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
     const hasReassignment = enableReassign && reassignTarget !== currentAssigneeValue;
     const reassignment = hasReassignment ? parseReassignment(reassignTarget) : undefined;
     const submittedBody = trimmed;
+    const viewportSnapshot = captureComposerViewportSnapshot(composerContainerRef.current);
 
     setSubmitting(true);
     setBody("");
     try {
-      await api.thread().append({
+      const appendPromise = api.thread().append({
         role: "user",
         content: [{ type: "text", text: submittedBody }],
         metadata: { custom: {} },
@@ -1684,6 +1696,8 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
           },
         },
       });
+      queueViewportRestore(viewportSnapshot);
+      await appendPromise;
       if (draftKey) clearDraft(draftKey);
       setReopen(issueStatus === "done" || issueStatus === "cancelled");
       setReassignTarget(effectiveSuggestedAssigneeValue);
@@ -1696,6 +1710,7 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
       );
     } finally {
       setSubmitting(false);
+      queueViewportRestore(viewportSnapshot);
     }
   }
 
