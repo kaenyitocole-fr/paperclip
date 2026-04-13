@@ -18,6 +18,7 @@ import type {
   PluginJobContext,
   PluginLauncherRegistration,
   PluginEvent,
+  PluginMemoryProvider,
   ScopeKey,
   ToolResult,
   ToolRunContext,
@@ -64,6 +65,8 @@ export interface TestHarness {
   performAction<T = unknown>(key: string, params?: Record<string, unknown>): Promise<T>;
   /** Execute a registered tool handler via `ctx.tools.execute(...)`. */
   executeTool<T = ToolResult>(name: string, params: unknown, runCtx?: Partial<ToolRunContext>): Promise<T>;
+  /** Execute a registered memory provider handler. */
+  invokeMemoryProvider<T = unknown>(key: string, action: "query" | "capture" | "forget", input: unknown): Promise<T>;
   /** Read raw in-memory state for assertions. */
   getState(input: ScopeKey): unknown;
   /** Simulate a streaming event arriving for an active session. */
@@ -155,6 +158,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const dataHandlers = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const actionHandlers = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const toolHandlers = new Map<string, (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>>();
+  const memoryProviders = new Map<string, PluginMemoryProvider>();
 
   const ctx: PluginContext = {
     manifest,
@@ -627,6 +631,16 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         toolHandlers.set(name, fn);
       },
     },
+    memoryProviders: {
+      register(key, provider) {
+        requireCapability(manifest, capabilitySet, "memory.providers.register");
+        const declared = manifest.memoryProviders?.some((entry) => entry.key === key) ?? false;
+        if (!declared) {
+          throw new Error(`Memory provider '${key}' is not declared in the manifest`);
+        }
+        memoryProviders.set(key, provider);
+      },
+    },
     metrics: {
       async write(name, value, tags) {
         requireCapability(manifest, capabilitySet, "metrics.write");
@@ -725,6 +739,17 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         projectId: runCtx.projectId ?? "project-test",
       };
       return await handler(params, ctxToPass) as T;
+    },
+    async invokeMemoryProvider<T = unknown>(key: string, action: "query" | "capture" | "forget", input: unknown) {
+      const provider = memoryProviders.get(key);
+      if (!provider) throw new Error(`No memory provider registered for '${key}'`);
+      if (action === "query") return await provider.query(input as any) as T;
+      if (action === "capture") return await provider.capture(input as any) as T;
+      if (action === "forget") {
+        if (!provider.forget) throw new Error(`Memory provider '${key}' does not implement forget`);
+        return await provider.forget(input as any) as T;
+      }
+      throw new Error(`Unsupported memory provider action '${action}'`);
     },
     getState(input) {
       return state.get(stateMapKey(input));

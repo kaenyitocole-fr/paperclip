@@ -16,18 +16,18 @@ import type {
   PluginToolDeclaration,
   MemoryBinding,
   MemoryBindingTarget,
-  MemoryCaptureResult,
+  MemoryProviderCaptureInput,
+  MemoryProviderCaptureOutput,
+  MemoryProviderForgetInput,
+  MemoryProviderForgetOutput,
+  MemoryProviderQueryInput,
+  MemoryProviderQueryOutput,
   PluginLauncherDeclaration,
   Company,
-  MemoryForgetResult,
   MemoryOperation,
   MemoryProviderCapabilities,
   MemoryProviderDescriptor,
-  MemoryQueryResult,
-  MemoryRecord,
   MemoryResolvedBinding,
-  MemoryScope,
-  MemorySourceRef,
   MemoryUsage,
   Project,
   Issue,
@@ -77,6 +77,12 @@ export type {
   MemoryBinding,
   MemoryBindingTarget,
   MemoryCaptureResult,
+  MemoryProviderCaptureInput,
+  MemoryProviderCaptureOutput,
+  MemoryProviderForgetInput,
+  MemoryProviderForgetOutput,
+  MemoryProviderQueryInput,
+  MemoryProviderQueryOutput,
   MemoryForgetResult,
   MemoryOperation,
   MemoryProviderCapabilities,
@@ -177,23 +183,13 @@ export interface PluginMemoryProvider {
   displayName: string;
   description?: string;
   capabilities?: Partial<MemoryProviderCapabilities>;
-  query?(input: {
-    scope: MemoryScope;
-    query: string;
-    topK?: number;
-    metadataFilter?: Record<string, unknown>;
-  }): Promise<MemoryQueryResult>;
-  capture?(input: {
-    scope: MemoryScope;
-    source: MemorySourceRef;
-    title?: string | null;
-    content: string;
-    summary?: string | null;
-    metadata?: Record<string, unknown>;
-  }): Promise<MemoryCaptureResult>;
-  list?(input: { scope: MemoryScope; limit?: number }): Promise<MemoryRecord[]>;
-  get?(input: { scope: MemoryScope; recordId: string }): Promise<MemoryRecord | null>;
-  forget?(input: { scope: MemoryScope; recordIds: string[] }): Promise<MemoryForgetResult>;
+  query(input: MemoryProviderQueryInput): Promise<MemoryProviderQueryOutput>;
+  capture(input: MemoryProviderCaptureInput): Promise<MemoryProviderCaptureOutput>;
+  forget?(input: MemoryProviderForgetInput): Promise<MemoryProviderForgetOutput>;
+}
+
+export interface PluginMemoryProvidersClient {
+  register(key: string, provider: PluginMemoryProvider): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,6 +1226,9 @@ export interface PluginContext {
 
   /** Register agent tool handlers. Requires `agent.tools.register`. */
   tools: PluginToolsClient;
+
+  /** Register worker-side memory provider handlers. Requires `memory.providers.register`. */
+  memoryProviders: PluginMemoryProvidersClient;
 
   /** Write plugin metrics. Requires `metrics.write`. */
   metrics: PluginMetricsClient;

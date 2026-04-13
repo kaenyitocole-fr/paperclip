@@ -34,6 +34,11 @@ import { createMemoryBindingSchema, updateMemoryBindingSchema } from "@paperclip
 import { z } from "zod";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { costService } from "./costs.js";
+import { validateInstanceConfig } from "./plugin-config-validator.js";
+import {
+  getDefaultPluginMemoryProviderDispatcher,
+  type PluginMemoryProviderDispatcher,
+} from "./plugin-memory-provider-dispatcher.js";
 
 type ActorInfo = {
   actorType: "agent" | "user" | "system";
@@ -90,6 +95,18 @@ const LOCAL_BASIC_PROVIDER: MemoryProviderDescriptor = {
 
 function parseLocalBasicConfig(config: Record<string, unknown> | null | undefined): LocalBasicConfig {
   return localBasicConfigSchema.parse(config ?? {});
+}
+
+function buildMemoryPreamble(records: MemoryRecord[]) {
+  if (records.length === 0) return null;
+  return [
+    "Relevant memory:",
+    ...records.map((record, index) => {
+      const sourceLabel = record.source?.kind ?? "memory";
+      const body = (record.summary ?? record.content).replace(/\s+/g, " ").slice(0, 240);
+      return `${index + 1}. [${sourceLabel}] ${body}`;
+    }),
+  ].join("\n");
 }
 
 function scopeFromRow(row: {
@@ -306,7 +323,13 @@ async function createDirectCostEvent(
   return event.id;
 }
 
-export function memoryService(db: Db) {
+export function memoryService(
+  db: Db,
+  opts?: {
+    pluginMemoryProviders?: PluginMemoryProviderDispatcher;
+  },
+) {
+  const pluginMemoryProviders = opts?.pluginMemoryProviders ?? getDefaultPluginMemoryProviderDispatcher();
   async function getBindingOrThrow(bindingId: string) {
     const binding = await db
       .select()
@@ -318,10 +341,25 @@ export function memoryService(db: Db) {
   }
 
   async function validateProviderConfig(providerKey: string, config: Record<string, unknown>) {
-    if (providerKey !== LOCAL_BASIC_PROVIDER_KEY) {
+    if (providerKey === LOCAL_BASIC_PROVIDER_KEY) {
+      return parseLocalBasicConfig(config);
+    }
+
+    const pluginProvider = pluginMemoryProviders?.getProvider(providerKey);
+    if (!pluginProvider) {
       throw unprocessable(`Unknown memory provider: ${providerKey}`);
     }
-    return parseLocalBasicConfig(config);
+
+    const schema = pluginProvider.descriptor.configSchema;
+    if (!schema) return config;
+
+    const validation = validateInstanceConfig(config, schema);
+    if (!validation.valid) {
+      const detail = validation.errors?.map((error) => `${error.field} ${error.message}`).join("; ") ?? "invalid config";
+      throw unprocessable(`Invalid memory provider config: ${detail}`);
+    }
+
+    return config;
   }
 
   async function resolveBindingInternal(companyId: string, scope: MemoryScope, bindingKey?: string | null) {
@@ -463,6 +501,69 @@ export function memoryService(db: Db) {
     return [mapRecord(row)];
   }
 
+  async function persistCatalogRecords(
+    binding: BindingRow,
+    records: MemoryRecord[],
+    operationId: string | null,
+  ) {
+    for (const record of records) {
+      await db
+        .insert(memoryLocalRecords)
+        .values({
+          id: record.id,
+          companyId: binding.companyId,
+          bindingId: binding.id,
+          providerKey: binding.providerKey,
+          scopeAgentId: record.scope.agentId ?? null,
+          scopeProjectId: record.scope.projectId ?? null,
+          scopeIssueId: record.scope.issueId ?? null,
+          scopeRunId: record.scope.runId ?? null,
+          scopeSubjectId: record.scope.subjectId ?? null,
+          sourceKind: record.source?.kind ?? null,
+          sourceIssueId: record.source?.issueId ?? null,
+          sourceCommentId: record.source?.commentId ?? null,
+          sourceDocumentKey: record.source?.documentKey ?? null,
+          sourceRunId: record.source?.runId ?? null,
+          sourceActivityId: record.source?.activityId ?? null,
+          sourceExternalRef: record.source?.externalRef ?? null,
+          title: record.title ?? null,
+          content: record.content,
+          summary: record.summary ?? null,
+          metadata: record.metadata ?? {},
+          createdByOperationId: operationId,
+          deletedAt: record.deletedAt ?? null,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+        })
+        .onConflictDoUpdate({
+          target: memoryLocalRecords.id,
+          set: {
+            bindingId: binding.id,
+            providerKey: binding.providerKey,
+            scopeAgentId: record.scope.agentId ?? null,
+            scopeProjectId: record.scope.projectId ?? null,
+            scopeIssueId: record.scope.issueId ?? null,
+            scopeRunId: record.scope.runId ?? null,
+            scopeSubjectId: record.scope.subjectId ?? null,
+            sourceKind: record.source?.kind ?? null,
+            sourceIssueId: record.source?.issueId ?? null,
+            sourceCommentId: record.source?.commentId ?? null,
+            sourceDocumentKey: record.source?.documentKey ?? null,
+            sourceRunId: record.source?.runId ?? null,
+            sourceActivityId: record.source?.activityId ?? null,
+            sourceExternalRef: record.source?.externalRef ?? null,
+            title: record.title ?? null,
+            content: record.content,
+            summary: record.summary ?? null,
+            metadata: record.metadata ?? {},
+            createdByOperationId: operationId,
+            deletedAt: record.deletedAt ?? null,
+            updatedAt: record.updatedAt,
+          },
+        });
+    }
+  }
+
   async function listLocalBasic(companyId: string, filters: MemoryListRecordsQuery) {
     const conditions = [eq(memoryLocalRecords.companyId, companyId)];
     if (filters.bindingId) conditions.push(eq(memoryLocalRecords.bindingId, filters.bindingId));
@@ -555,8 +656,47 @@ export function memoryService(db: Db) {
     return binding;
   }
 
+  function isPluginProvider(providerKey: string) {
+    return providerKey !== LOCAL_BASIC_PROVIDER_KEY;
+  }
+
+  function isHookEnabled(
+    binding: BindingRow,
+    hook: "preRunHydrate" | "postRunCapture" | "issueCommentCapture" | "issueDocumentCapture",
+  ) {
+    if (binding.providerKey !== LOCAL_BASIC_PROVIDER_KEY) {
+      return true;
+    }
+
+    const config = parseLocalBasicConfig(binding.config);
+    switch (hook) {
+      case "preRunHydrate":
+        return config.enablePreRunHydrate;
+      case "postRunCapture":
+        return config.enablePostRunCapture;
+      case "issueCommentCapture":
+        return config.enableIssueCommentCapture;
+      case "issueDocumentCapture":
+        return config.enableIssueDocumentCapture;
+    }
+  }
+
+  function getHydrateTopK(binding: BindingRow) {
+    if (binding.providerKey === LOCAL_BASIC_PROVIDER_KEY) {
+      return parseLocalBasicConfig(binding.config).maxHydrateSnippets;
+    }
+
+    const raw = binding.config?.topK;
+    return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+      ? Math.min(Math.max(Math.floor(raw), 1), 25)
+      : 5;
+  }
+
   const service = {
-    providers: async () => [LOCAL_BASIC_PROVIDER],
+    providers: async () => {
+      const pluginProviders = pluginMemoryProviders?.listProviders() ?? [];
+      return [LOCAL_BASIC_PROVIDER, ...pluginProviders];
+    },
 
     getBindingById: async (bindingId: string) => {
       const row = await db
@@ -699,24 +839,40 @@ export function memoryService(db: Db) {
     query: async (companyId: string, data: MemoryQuery, actor: ActorInfo, triggerKind: MemoryOperation["triggerKind"] = "manual", hookKind?: MemoryOperation["hookKind"]) => {
       const resolved = await resolveBindingInternal(companyId, data.scope ?? {}, data.bindingKey);
       const binding = ensureBindingEnabled(resolved.binding);
-      const config = parseLocalBasicConfig(binding.config);
-      const records = await queryLocalBasic(
-        binding,
-        data.scope ?? {},
-        data.query,
-        Math.min(data.topK ?? config.maxHydrateSnippets, 25),
-      );
-      const preamble =
-        data.intent === "agent_preamble" && records.length > 0
-          ? [
-              "Relevant memory:",
-              ...records.map((record, index) => {
-                const sourceLabel = record.source?.kind ?? "memory";
-                const body = (record.summary ?? record.content).replace(/\s+/g, " ").slice(0, 240);
-                return `${index + 1}. [${sourceLabel}] ${body}`;
-              }),
-            ].join("\n")
-          : null;
+      let records: MemoryRecord[];
+      let preamble: string | null = null;
+      let usage: MemoryUsage[] = [];
+      let providerResultJson: Record<string, unknown> | null = null;
+
+      if (binding.providerKey === LOCAL_BASIC_PROVIDER_KEY) {
+        const config = parseLocalBasicConfig(binding.config);
+        records = await queryLocalBasic(
+          binding,
+          data.scope ?? {},
+          data.query,
+          Math.min(data.topK ?? config.maxHydrateSnippets, 25),
+        );
+      } else {
+        if (!pluginMemoryProviders) {
+          throw unprocessable(`Unknown memory provider: ${binding.providerKey}`);
+        }
+        const providerResult = await pluginMemoryProviders.query(binding.providerKey, {
+          binding: mapBinding(binding),
+          scope: data.scope ?? {},
+          query: data.query,
+          topK: Math.min(data.topK ?? getHydrateTopK(binding), 25),
+          intent: data.intent,
+          metadataFilter: data.metadataFilter,
+        });
+        records = providerResult.records;
+        preamble = providerResult.preamble ?? null;
+        usage = providerResult.usage ?? [];
+        providerResultJson = providerResult.resultJson ?? null;
+      }
+
+      if (data.intent === "agent_preamble" && !preamble) {
+        preamble = buildMemoryPreamble(records);
+      }
       const operation = await logOperation({
         companyId,
         binding,
@@ -734,8 +890,10 @@ export function memoryService(db: Db) {
         resultJson: {
           preamble,
           recordIds: records.map((record) => record.id),
+          providerResult: providerResultJson,
         },
         recordCount: records.length,
+        usage,
       });
       return { operation, records, preamble } satisfies MemoryQueryResult;
     },
@@ -744,18 +902,41 @@ export function memoryService(db: Db) {
       const resolved = await resolveBindingInternal(companyId, data.scope ?? {}, data.bindingKey);
       const binding = ensureBindingEnabled(resolved.binding);
       const operationId = randomUUID();
-      const records = await captureLocalBasic(
-        binding,
-        data.scope ?? {},
-        data.source,
-        {
+      let records: MemoryRecord[];
+      let usage: MemoryUsage[] = [];
+      let providerResultJson: Record<string, unknown> | null = null;
+
+      if (binding.providerKey === LOCAL_BASIC_PROVIDER_KEY) {
+        records = await captureLocalBasic(
+          binding,
+          data.scope ?? {},
+          data.source,
+          {
+            title: data.title ?? null,
+            content: data.content,
+            summary: data.summary ?? null,
+            metadata: data.metadata ?? {},
+          },
+          operationId,
+        );
+      } else {
+        if (!pluginMemoryProviders) {
+          throw unprocessable(`Unknown memory provider: ${binding.providerKey}`);
+        }
+        const providerResult = await pluginMemoryProviders.capture(binding.providerKey, {
+          binding: mapBinding(binding),
+          scope: data.scope ?? {},
+          source: data.source,
           title: data.title ?? null,
           content: data.content,
           summary: data.summary ?? null,
           metadata: data.metadata ?? {},
-        },
-        operationId,
-      );
+        });
+        records = providerResult.records;
+        usage = providerResult.usage ?? [];
+        providerResultJson = providerResult.resultJson ?? null;
+        await persistCatalogRecords(binding, records, operationId);
+      }
       const operation = await logOperation({
         id: operationId,
         companyId,
@@ -772,8 +953,10 @@ export function memoryService(db: Db) {
         },
         resultJson: {
           recordIds: records.map((record) => record.id),
+          providerResult: providerResultJson,
         },
         recordCount: records.length,
+        usage,
       });
       return { operation, records } satisfies MemoryCaptureResult;
     },
@@ -792,6 +975,20 @@ export function memoryService(db: Db) {
         throw unprocessable("Memory records must belong to the same binding");
       }
       const binding = await getBindingOrThrow(rows[0].bindingId);
+      let usage: MemoryUsage[] = [];
+      let providerResultJson: Record<string, unknown> | null = null;
+      if (isPluginProvider(binding.providerKey)) {
+        if (!pluginMemoryProviders) {
+          throw unprocessable(`Unknown memory provider: ${binding.providerKey}`);
+        }
+        const providerResult = await pluginMemoryProviders.forget(binding.providerKey, {
+          binding: mapBinding(binding),
+          scope: data.scope ?? {},
+          recordIds,
+        });
+        usage = providerResult.usage ?? [];
+        providerResultJson = providerResult.resultJson ?? null;
+      }
       await db
         .update(memoryLocalRecords)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -804,8 +1001,9 @@ export function memoryService(db: Db) {
         triggerKind,
         scope: data.scope ?? {},
         requestJson: { recordIds },
-        resultJson: { forgottenRecordIds: recordIds },
+        resultJson: { forgottenRecordIds: recordIds, providerResult: providerResultJson },
         recordCount: recordIds.length,
+        usage,
       });
       return { operation, forgottenRecordIds: recordIds } satisfies MemoryForgetResult;
     },
@@ -872,8 +1070,7 @@ export function memoryService(db: Db) {
       if (!resolved.binding || !resolved.binding.enabled) {
         return null;
       }
-      const config = parseLocalBasicConfig(resolved.binding.config);
-      if (!config.enablePreRunHydrate) {
+      if (!isHookEnabled(resolved.binding, "preRunHydrate")) {
         return null;
       }
       const result = await service.query(
@@ -886,7 +1083,7 @@ export function memoryService(db: Db) {
             runId: input.runId,
           },
           query: input.query,
-          topK: config.maxHydrateSnippets,
+          topK: getHydrateTopK(resolved.binding),
           intent: "agent_preamble",
         },
         {
@@ -924,8 +1121,7 @@ export function memoryService(db: Db) {
       if (!resolved.binding || !resolved.binding.enabled) {
         return null;
       }
-      const config = parseLocalBasicConfig(resolved.binding.config);
-      if (!config.enablePostRunCapture) {
+      if (!isHookEnabled(resolved.binding, "postRunCapture")) {
         return null;
       }
       return service.capture(
@@ -977,8 +1173,7 @@ export function memoryService(db: Db) {
         null,
       );
       if (!resolved.binding || !resolved.binding.enabled) return null;
-      const config = parseLocalBasicConfig(resolved.binding.config);
-      if (!config.enableIssueCommentCapture) return null;
+      if (!isHookEnabled(resolved.binding, "issueCommentCapture")) return null;
       return service.capture(
         input.companyId,
         {
@@ -1022,8 +1217,7 @@ export function memoryService(db: Db) {
         null,
       );
       if (!resolved.binding || !resolved.binding.enabled) return null;
-      const config = parseLocalBasicConfig(resolved.binding.config);
-      if (!config.enableIssueDocumentCapture) return null;
+      if (!isHookEnabled(resolved.binding, "issueDocumentCapture")) return null;
       return service.capture(
         input.companyId,
         {

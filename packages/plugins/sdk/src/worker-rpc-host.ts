@@ -51,6 +51,7 @@ import type {
   PluginEvent,
   PluginJobContext,
   PluginLauncherRegistration,
+  PluginMemoryProvider,
   ScopeKey,
   ToolRunContext,
   ToolResult,
@@ -70,6 +71,8 @@ import type {
   GetDataParams,
   PerformActionParams,
   ExecuteToolParams,
+  InvokeMemoryProviderParams,
+  InvokeMemoryProviderResult,
   WorkerToHostMethodName,
   WorkerToHostMethods,
 } from "./protocol.js";
@@ -261,6 +264,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     declaration: Pick<import("@paperclipai/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">;
     fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>;
   }>();
+  const memoryProviderHandlers = new Map<string, PluginMemoryProvider>();
 
   // Agent session event callbacks (populated by sendMessage, cleared by close)
   const sessionEventCallbacks = new Map<string, (event: AgentSessionEvent) => void>();
@@ -787,6 +791,21 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
       },
 
+      memoryProviders: {
+        register(key: string, provider: PluginMemoryProvider): void {
+          if (!manifest) {
+            throw new Error("Cannot register memory provider before initialize");
+          }
+
+          const declared = manifest.memoryProviders?.some((entry) => entry.key === key) ?? false;
+          if (!declared) {
+            throw new Error(`Memory provider "${key}" is not declared in the plugin manifest`);
+          }
+
+          memoryProviderHandlers.set(key, provider);
+        },
+      },
+
       metrics: {
         async write(name: string, value: number, tags?: Record<string, string>): Promise<void> {
           await callHost("metrics.write", { name, value, tags });
@@ -888,6 +907,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       case "executeTool":
         return handleExecuteTool(params as ExecuteToolParams);
 
+      case "invokeMemoryProvider":
+        return handleInvokeMemoryProvider(params as InvokeMemoryProviderParams);
+
       default:
         throw Object.assign(
           new Error(`Unknown method: ${method}`),
@@ -919,6 +941,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (plugin.definition.onConfigChanged) supportedMethods.push("configChanged");
     if (plugin.definition.onHealth) supportedMethods.push("health");
     if (plugin.definition.onShutdown) supportedMethods.push("shutdown");
+    if (memoryProviderHandlers.size > 0) supportedMethods.push("invokeMemoryProvider");
 
     return { ok: true, supportedMethods };
   }
@@ -1050,6 +1073,38 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       throw new Error(`No tool handler registered for "${params.toolName}"`);
     }
     return entry.fn(params.parameters, params.runContext);
+  }
+
+  async function handleInvokeMemoryProvider(
+    params: InvokeMemoryProviderParams,
+  ): Promise<InvokeMemoryProviderResult> {
+    const provider = memoryProviderHandlers.get(params.providerKey);
+    if (!provider) {
+      throw Object.assign(
+        new Error(`No memory provider registered for "${params.providerKey}"`),
+        { code: JSONRPC_ERROR_CODES.METHOD_NOT_FOUND },
+      );
+    }
+
+    switch (params.action) {
+      case "query":
+        return provider.query(params.input);
+      case "capture":
+        return provider.capture(params.input);
+      case "forget":
+        if (!provider.forget) {
+          throw Object.assign(
+            new Error(`Memory provider "${params.providerKey}" does not implement forget`),
+            { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED },
+          );
+        }
+        return provider.forget(params.input);
+      default:
+        throw Object.assign(
+          new Error(`Unknown memory provider action: ${(params as { action: string }).action}`),
+          { code: JSONRPC_ERROR_CODES.METHOD_NOT_FOUND },
+        );
+    }
   }
 
   // -----------------------------------------------------------------------

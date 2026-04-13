@@ -275,13 +275,18 @@ export function issueRoutes(
         now?: Date;
       }): Promise<unknown>;
     };
+    pluginMemoryProviders?: import("../services/plugin-memory-provider-dispatcher.js").PluginMemoryProviderDispatcher;
   },
 ) {
   const router = Router();
   const svc = issueService(db);
   const access = accessService(db);
-  const heartbeat = heartbeatService(db);
-  const memorySvc = memoryService(db);
+  const heartbeat = heartbeatService(db, {
+    pluginMemoryProviders: opts?.pluginMemoryProviders,
+  });
+  const memorySvc = memoryService(db, {
+    pluginMemoryProviders: opts?.pluginMemoryProviders,
+  });
   const feedback = feedbackService(db);
   const instanceSettings = instanceSettingsService(db);
   const agentsSvc = agentService(db);

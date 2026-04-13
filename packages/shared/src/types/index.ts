@@ -135,6 +135,12 @@ export type {
   MemoryQueryResult,
   MemoryCaptureResult,
   MemoryForgetResult,
+  MemoryProviderQueryInput,
+  MemoryProviderQueryOutput,
+  MemoryProviderCaptureInput,
+  MemoryProviderCaptureOutput,
+  MemoryProviderForgetInput,
+  MemoryProviderForgetOutput,
 } from "./memory.js";
 export type {
   BudgetPolicy,

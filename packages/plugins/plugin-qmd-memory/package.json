@@ -1,0 +1,32 @@
+{
+  "name": "@paperclipai/plugin-qmd-memory",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "First-party QMD-backed memory provider plugin for Paperclip",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config ./vitest.config.ts",
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
+  },
+  "paperclipPlugin": {
+    "manifest": "./dist/src/manifest.js",
+    "worker": "./dist/src/worker.js"
+  },
+  "keywords": [
+    "paperclip",
+    "plugin",
+    "memory",
+    "qmd"
+  ],
+  "author": "Paperclip",
+  "license": "MIT",
+  "dependencies": {
+    "@paperclipai/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

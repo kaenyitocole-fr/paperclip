@@ -1183,7 +1183,12 @@ function resolveNextSessionState(input: {
   };
 }
 
-export function heartbeatService(db: Db) {
+export function heartbeatService(
+  db: Db,
+  opts?: {
+    pluginMemoryProviders?: import("./plugin-memory-provider-dispatcher.js").PluginMemoryProviderDispatcher;
+  },
+) {
   const instanceSettings = instanceSettingsService(db);
   const getCurrentUserRedactionOptions = async () => ({
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
@@ -1191,7 +1196,9 @@ export function heartbeatService(db: Db) {
 
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
-  const memorySvc = memoryService(db);
+  const memorySvc = memoryService(db, {
+    pluginMemoryProviders: opts?.pluginMemoryProviders,
+  });
   const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);

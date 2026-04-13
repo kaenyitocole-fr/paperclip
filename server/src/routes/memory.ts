@@ -37,9 +37,16 @@ function actorInfoFromReq(req: any) {
   };
 }
 
-export function memoryRoutes(db: Db) {
+export function memoryRoutes(
+  db: Db,
+  opts?: {
+    pluginMemoryProviders?: import("../services/plugin-memory-provider-dispatcher.js").PluginMemoryProviderDispatcher;
+  },
+) {
   const router = Router();
-  const memory = memoryService(db);
+  const memory = memoryService(db, {
+    pluginMemoryProviders: opts?.pluginMemoryProviders,
+  });
   const agentsSvc = agentService(db);
 
   router.get("/companies/:companyId/memory/providers", async (req, res) => {

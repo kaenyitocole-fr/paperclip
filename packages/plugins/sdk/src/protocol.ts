@@ -21,6 +21,12 @@ import type {
   PluginLauncherRenderContextSnapshot,
   PluginLauncherRenderEnvironment,
   PluginStateScopeKind,
+  MemoryProviderCaptureInput,
+  MemoryProviderCaptureOutput,
+  MemoryProviderForgetInput,
+  MemoryProviderForgetOutput,
+  MemoryProviderQueryInput,
+  MemoryProviderQueryOutput,
   Company,
   Project,
   Issue,
@@ -313,6 +319,28 @@ export interface ExecuteToolParams {
   runContext: ToolRunContext;
 }
 
+export type InvokeMemoryProviderParams =
+  | {
+    providerKey: string;
+    action: "query";
+    input: MemoryProviderQueryInput;
+  }
+  | {
+    providerKey: string;
+    action: "capture";
+    input: MemoryProviderCaptureInput;
+  }
+  | {
+    providerKey: string;
+    action: "forget";
+    input: MemoryProviderForgetInput;
+  };
+
+export type InvokeMemoryProviderResult =
+  | MemoryProviderQueryOutput
+  | MemoryProviderCaptureOutput
+  | MemoryProviderForgetOutput;
+
 // ---------------------------------------------------------------------------
 // UI launcher / modal host interaction payloads
 // ---------------------------------------------------------------------------
@@ -380,6 +408,8 @@ export interface HostToWorkerMethods {
   performAction: [params: PerformActionParams, result: unknown];
   /** @see PLUGIN_SPEC.md §13.10 */
   executeTool: [params: ExecuteToolParams, result: ToolResult];
+  /** Worker-side memory provider dispatch. */
+  invokeMemoryProvider: [params: InvokeMemoryProviderParams, result: InvokeMemoryProviderResult];
 }
 
 /** Union of all host→worker method names. */
@@ -402,6 +432,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "getData",
   "performAction",
   "executeTool",
+  "invokeMemoryProvider",
 ] as const;
 
 // ---------------------------------------------------------------------------

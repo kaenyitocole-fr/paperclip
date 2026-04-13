@@ -40,6 +40,10 @@ import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
 import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
+import {
+  createPluginMemoryProviderDispatcher,
+  setDefaultPluginMemoryProviderDispatcher,
+} from "./services/plugin-memory-provider-dispatcher.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
 import { buildHostServices, flushPluginLogBuffer } from "./services/plugin-host-services.js";
@@ -141,36 +145,6 @@ export async function createApp(
 
   // Mount API routes
   const api = Router();
-  api.use(boardMutationGuard());
-  api.use(
-    "/health",
-    healthRoutes(db, {
-      deploymentMode: opts.deploymentMode,
-      deploymentExposure: opts.deploymentExposure,
-      authReady: opts.authReady,
-      companyDeletionEnabled: opts.companyDeletionEnabled,
-    }),
-  );
-  api.use("/companies", companyRoutes(db, opts.storageService));
-  api.use(companySkillRoutes(db));
-  api.use(agentRoutes(db));
-  api.use(assetRoutes(db, opts.storageService));
-  api.use(projectRoutes(db));
-  api.use(issueRoutes(db, opts.storageService, {
-    feedbackExportService: opts.feedbackExportService,
-  }));
-  api.use(routineRoutes(db));
-  api.use(executionWorkspaceRoutes(db));
-  api.use(goalRoutes(db));
-  api.use(approvalRoutes(db));
-  api.use(secretRoutes(db));
-  api.use(costRoutes(db));
-  api.use(memoryRoutes(db));
-  api.use(activityRoutes(db));
-  api.use(dashboardRoutes(db));
-  api.use(sidebarBadgeRoutes(db));
-  api.use(inboxDismissalRoutes(db));
-  api.use(instanceSettingsRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);
@@ -183,6 +157,8 @@ export async function createApp(
     jobStore,
     workerManager,
   });
+  const memoryProviderDispatcher = createPluginMemoryProviderDispatcher(workerManager);
+  setDefaultPluginMemoryProviderDispatcher(memoryProviderDispatcher);
   const toolDispatcher = createPluginToolDispatcher({
     workerManager,
     lifecycleManager: lifecycle,
@@ -204,6 +180,7 @@ export async function createApp(
       jobScheduler: scheduler,
       jobStore,
       toolDispatcher,
+      memoryProviderDispatcher,
       lifecycleManager: lifecycle,
       instanceInfo: {
         instanceId: opts.instanceId ?? "default",
@@ -224,6 +201,37 @@ export async function createApp(
       },
     },
   );
+  api.use(boardMutationGuard());
+  api.use(
+    "/health",
+    healthRoutes(db, {
+      deploymentMode: opts.deploymentMode,
+      deploymentExposure: opts.deploymentExposure,
+      authReady: opts.authReady,
+      companyDeletionEnabled: opts.companyDeletionEnabled,
+    }),
+  );
+  api.use("/companies", companyRoutes(db, opts.storageService));
+  api.use(companySkillRoutes(db));
+  api.use(agentRoutes(db));
+  api.use(assetRoutes(db, opts.storageService));
+  api.use(projectRoutes(db));
+  api.use(issueRoutes(db, opts.storageService, {
+    feedbackExportService: opts.feedbackExportService,
+    pluginMemoryProviders: memoryProviderDispatcher,
+  }));
+  api.use(routineRoutes(db));
+  api.use(executionWorkspaceRoutes(db));
+  api.use(goalRoutes(db));
+  api.use(approvalRoutes(db));
+  api.use(secretRoutes(db));
+  api.use(costRoutes(db));
+  api.use(memoryRoutes(db, { pluginMemoryProviders: memoryProviderDispatcher }));
+  api.use(activityRoutes(db));
+  api.use(dashboardRoutes(db));
+  api.use(sidebarBadgeRoutes(db));
+  api.use(inboxDismissalRoutes(db));
+  api.use(instanceSettingsRoutes(db));
   api.use(
     pluginRoutes(
       db,
@@ -340,6 +348,7 @@ export async function createApp(
   process.once("exit", () => {
     if (feedbackExportTimer) clearInterval(feedbackExportTimer);
     devWatcher?.close();
+    setDefaultPluginMemoryProviderDispatcher(null);
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
   });

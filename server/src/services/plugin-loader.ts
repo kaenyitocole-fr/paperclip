@@ -47,6 +47,7 @@ import type { PluginEventBus } from "./plugin-event-bus.js";
 import type { PluginJobScheduler } from "./plugin-job-scheduler.js";
 import type { PluginJobStore } from "./plugin-job-store.js";
 import type { PluginToolDispatcher } from "./plugin-tool-dispatcher.js";
+import type { PluginMemoryProviderDispatcher } from "./plugin-memory-provider-dispatcher.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
 
 const execFileAsync = promisify(execFile);
@@ -75,6 +76,8 @@ export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
   ".paperclip",
   "plugins",
 );
+
+export const PLUGIN_DATA_DIR_ENV = "PAPERCLIP_PLUGIN_DATA_DIR";
 
 const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../cli/node_modules/tsx/dist/loader.mjs");
 
@@ -131,6 +134,10 @@ function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[
   return (manifest.ui?.slots ?? [])
     .filter((slot): slot is PluginUiSlotDeclaration => slot.type === "page" && typeof slot.routePath === "string" && slot.routePath.length > 0)
     .map((slot) => slot.routePath!);
+}
+
+function resolvePluginDataDir(localPluginDir: string, pluginId: string) {
+  return path.resolve(localPluginDir, "..", "data", "plugins", pluginId);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +234,8 @@ export interface PluginRuntimeServices {
   jobStore: PluginJobStore;
   /** Tool dispatcher for registering plugin-contributed agent tools. */
   toolDispatcher: PluginToolDispatcher;
+  /** Dispatcher for registering plugin-contributed memory providers. */
+  memoryProviderDispatcher: PluginMemoryProviderDispatcher;
   /** Lifecycle manager for state transitions and worker lifecycle events. */
   lifecycleManager: PluginLifecycleManager;
   /**
@@ -276,6 +285,8 @@ export interface PluginLoadResult {
     webhooks: number;
     /** Number of agent tools registered. */
     tools: number;
+    /** Number of memory providers registered. */
+    memoryProviders: number;
   };
 }
 
@@ -1486,7 +1497,7 @@ export function pluginLoader(
           plugin: readyPlugins[i]!,
           success: false,
           error: String(r.reason),
-          registered: { worker: false, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0 },
+          registered: { worker: false, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0, memoryProviders: 0 },
         };
       });
 
@@ -1549,7 +1560,7 @@ export function pluginLoader(
         return {
           plugin: updated,
           success: true,
-          registered: { worker: true, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0 },
+          registered: { worker: true, eventSubscriptions: 0, jobs: 0, webhooks: 0, tools: 0, memoryProviders: 0 },
         };
       }
 
@@ -1584,6 +1595,7 @@ export function pluginLoader(
         eventBus,
         jobScheduler,
         toolDispatcher,
+        memoryProviderDispatcher,
       } = runtimeServices;
 
       // 1. Unregister from job scheduler (cancels in-flight runs)
@@ -1602,7 +1614,10 @@ export function pluginLoader(
       // 3. Unregister agent tools
       toolDispatcher.unregisterPluginTools(pluginKey);
 
-      // 4. Stop the worker process
+      // 4. Unregister memory providers
+      memoryProviderDispatcher.unregisterPluginProviders(pluginId);
+
+      // 5. Stop the worker process
       try {
         if (workerManager.isRunning(pluginId)) {
           await workerManager.stopWorker(pluginId);
@@ -1668,6 +1683,7 @@ export function pluginLoader(
       jobs: 0,
       webhooks: 0,
       tools: 0,
+      memoryProviders: 0,
     };
 
     // Guard: runtime services must exist (callers already checked)
@@ -1686,6 +1702,7 @@ export function pluginLoader(
       jobScheduler,
       jobStore,
       toolDispatcher,
+      memoryProviderDispatcher,
       lifecycleManager,
       buildHostHandlers,
       instanceInfo,
@@ -1732,6 +1749,9 @@ export function pluginLoader(
         apiVersion: manifest.apiVersion,
         hostHandlers,
         autoRestart: true,
+        env: {
+          [PLUGIN_DATA_DIR_ENV]: resolvePluginDataDir(localPluginDir, pluginId),
+        },
       };
 
       // Repo-local plugin installs can resolve workspace TS sources at runtime
@@ -1818,6 +1838,17 @@ export function pluginLoader(
         log.info(
           { pluginId, pluginKey, tools: toolDeclarations.length },
           "plugin-loader: agent tools registered",
+        );
+      }
+
+      const memoryProviderDeclarations = manifest.memoryProviders ?? [];
+      if (memoryProviderDeclarations.length > 0) {
+        memoryProviderDispatcher.registerPluginProviders(pluginId, pluginKey, manifest);
+        registered.memoryProviders = memoryProviderDeclarations.length;
+
+        log.info(
+          { pluginId, pluginKey, memoryProviders: memoryProviderDeclarations.length },
+          "plugin-loader: memory providers registered",
         );
       }
 

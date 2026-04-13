@@ -165,3 +165,47 @@ export interface MemoryForgetResult {
   operation: MemoryOperation;
   forgottenRecordIds: string[];
 }
+
+export interface MemoryProviderQueryInput {
+  binding: MemoryBinding;
+  scope: MemoryScope;
+  query: string;
+  topK?: number;
+  intent?: "agent_preamble" | "answer" | "browse";
+  metadataFilter?: Record<string, unknown>;
+}
+
+export interface MemoryProviderQueryOutput {
+  records: MemoryRecord[];
+  preamble?: string | null;
+  usage?: MemoryUsage[];
+  resultJson?: Record<string, unknown> | null;
+}
+
+export interface MemoryProviderCaptureInput {
+  binding: MemoryBinding;
+  scope: MemoryScope;
+  source: MemorySourceRef;
+  title?: string | null;
+  content: string;
+  summary?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryProviderCaptureOutput {
+  records: MemoryRecord[];
+  usage?: MemoryUsage[];
+  resultJson?: Record<string, unknown> | null;
+}
+
+export interface MemoryProviderForgetInput {
+  binding: MemoryBinding;
+  scope: MemoryScope;
+  recordIds: string[];
+}
+
+export interface MemoryProviderForgetOutput {
+  forgottenRecordIds: string[];
+  usage?: MemoryUsage[];
+  resultJson?: Record<string, unknown> | null;
+}
