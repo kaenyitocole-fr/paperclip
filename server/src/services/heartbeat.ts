@@ -519,6 +519,30 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function summarizeRunFailureForIssueComment(
+  run: Pick<typeof heartbeatRuns.$inferSelect, "error" | "errorCode"> | null | undefined,
+) {
+  if (!run) return null;
+
+  const errorCode = readNonEmptyString(run.errorCode)?.trim() ?? null;
+  const rawError = readNonEmptyString(run.error)?.trim() ?? null;
+  const apiMessageMatch = rawError?.match(/"message"\s*:\s*"([^"]+)"/);
+  const firstLine = rawError
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) ?? null;
+  const summarySource = apiMessageMatch?.[1] ?? firstLine;
+  const summary =
+    summarySource && summarySource.length > 240
+      ? `${summarySource.slice(0, 237)}...`
+      : summarySource;
+
+  if (errorCode && summary) return ` Latest retry failure: \`${errorCode}\` - ${summary}.`;
+  if (errorCode) return ` Latest retry failure: \`${errorCode}\`.`;
+  if (summary) return ` Latest retry failure: ${summary}.`;
+  return null;
+}
+
 function normalizeLedgerBillingType(value: unknown): BillingType {
   const raw = readNonEmptyString(value);
   switch (raw) {
@@ -2857,13 +2881,15 @@ export function heartbeatService(db: Db) {
         }
 
         if (latestRetryReason === "assignment_recovery") {
+          const failureSummary = summarizeRunFailureForIssueComment(latestRun);
           const updated = await escalateStrandedAssignedIssue({
             issue,
             previousStatus: "todo",
             latestRun,
             comment:
               "Paperclip automatically retried dispatch for this assigned `todo` issue after a lost wake/run, " +
-              "but it still has no live execution path. Moving it to `blocked` so it is visible for intervention.",
+              `but it still has no live execution path.${failureSummary ?? ""} ` +
+              "Moving it to `blocked` so it is visible for intervention.",
           });
           if (updated) {
             result.escalated += 1;
@@ -2892,14 +2918,15 @@ export function heartbeatService(db: Db) {
       }
 
       if (latestRetryReason === "issue_continuation_needed") {
+        const failureSummary = summarizeRunFailureForIssueComment(latestRun);
         const updated = await escalateStrandedAssignedIssue({
           issue,
           previousStatus: "in_progress",
           latestRun,
           comment:
             "Paperclip automatically retried continuation for this assigned `in_progress` issue after its live " +
-            "execution disappeared, but it still has no live execution path. Moving it to `blocked` so it is " +
-            "visible for intervention.",
+            `execution disappeared, but it still has no live execution path.${failureSummary ?? ""} ` +
+            "Moving it to `blocked` so it is visible for intervention.",
         });
         if (updated) {
           result.escalated += 1;
