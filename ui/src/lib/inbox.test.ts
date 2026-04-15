@@ -12,6 +12,7 @@ import type {
 } from "@paperclipai/shared";
 import {
   DEFAULT_INBOX_ISSUE_COLUMNS,
+  buildGroupedInboxSections,
   buildInboxKeyboardNavEntries,
   buildInboxDismissedAtByKey,
   computeInboxBadgeData,
@@ -758,6 +759,45 @@ describe("inbox helpers", () => {
         },
       }),
     ).toEqual([]);
+  });
+
+  it("keeps inbox search matches ahead of archived and other result sections", () => {
+    const inboxIssue = makeIssue("inbox", false);
+    inboxIssue.lastActivityAt = new Date("2026-03-11T04:00:00.000Z");
+
+    const archivedIssue = makeIssue("archived", false);
+    archivedIssue.lastActivityAt = new Date("2026-03-11T03:00:00.000Z");
+
+    const otherIssue = makeIssue("other", false);
+    otherIssue.lastActivityAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const sections = [
+      ...buildGroupedInboxSections(
+        getInboxWorkItems({ issues: [inboxIssue], approvals: [] }),
+        "none",
+        {},
+      ),
+      ...buildGroupedInboxSections(
+        getInboxWorkItems({ issues: [archivedIssue], approvals: [] }),
+        "none",
+        {},
+        { keyPrefix: "archived-search:", searchSection: "archived" },
+      ),
+      ...buildGroupedInboxSections(
+        getInboxWorkItems({ issues: [otherIssue], approvals: [] }),
+        "none",
+        {},
+        { keyPrefix: "other-search:", searchSection: "other" },
+      ),
+    ];
+
+    expect(sections.map((section) => section.searchSection)).toEqual(["none", "archived", "other"]);
+    expect(
+      sections.map((section) => {
+        const [item] = section.displayItems;
+        return item?.kind === "issue" ? item.issue.id : null;
+      }),
+    ).toEqual(["inbox", "archived", "other"]);
   });
 
   it("defaults the remembered inbox tab to mine and persists all", () => {

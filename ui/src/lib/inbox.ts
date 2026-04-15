@@ -87,6 +87,16 @@ export interface InboxWorkItemGroup {
   items: InboxWorkItem[];
 }
 
+export type InboxSearchSection = "none" | "archived" | "other";
+
+export interface InboxGroupedSection {
+  key: string;
+  label: string | null;
+  displayItems: InboxWorkItem[];
+  childrenByIssueId: Map<string, Issue[]>;
+  searchSection: InboxSearchSection;
+}
+
 export interface InboxKeyboardGroupSection {
   key: string;
   displayItems: InboxWorkItem[];
@@ -914,6 +924,31 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
   });
 
   return { displayItems, childrenByIssueId };
+}
+
+export function buildGroupedInboxSections(
+  items: InboxWorkItem[],
+  groupBy: InboxWorkItemGroupBy,
+  workspaceGrouping: InboxWorkspaceGroupingOptions,
+  options?: { keyPrefix?: string; searchSection?: InboxSearchSection; nestingEnabled?: boolean },
+): InboxGroupedSection[] {
+  const keyPrefix = options?.keyPrefix ?? "";
+  const searchSection = options?.searchSection ?? "none";
+  const nestingEnabled = options?.nestingEnabled ?? false;
+
+  return groupInboxWorkItems(items, groupBy, workspaceGrouping).map((group) => {
+    const nestedGroup = nestingEnabled && group.items.some((item) => item.kind === "issue")
+      ? buildInboxNesting(group.items)
+      : { displayItems: group.items, childrenByIssueId: new Map<string, Issue[]>() };
+
+    return {
+      key: `${keyPrefix}${group.key}`,
+      label: group.label,
+      displayItems: nestedGroup.displayItems,
+      childrenByIssueId: nestedGroup.childrenByIssueId,
+      searchSection,
+    };
+  });
 }
 
 export function getInboxWorkItemKey(item: InboxWorkItem): string {
