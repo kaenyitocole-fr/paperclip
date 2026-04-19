@@ -1356,6 +1356,19 @@ async function buildPaperclipWakePayload(input: {
       ? input.contextSnapshot.childIssueSummaries
       : [],
     childIssueSummaryTruncated: input.contextSnapshot.childIssueSummaryTruncated === true,
+    livenessContinuation: readNonEmptyString(input.contextSnapshot.livenessContinuationState) ||
+      readNonEmptyString(input.contextSnapshot.livenessContinuationInstruction) ||
+      readNonEmptyString(input.contextSnapshot.livenessContinuationSourceRunId) ||
+      typeof input.contextSnapshot.livenessContinuationAttempt === "number"
+      ? {
+          attempt: input.contextSnapshot.livenessContinuationAttempt,
+          maxAttempts: input.contextSnapshot.livenessContinuationMaxAttempts,
+          sourceRunId: readNonEmptyString(input.contextSnapshot.livenessContinuationSourceRunId),
+          state: readNonEmptyString(input.contextSnapshot.livenessContinuationState),
+          reason: readNonEmptyString(input.contextSnapshot.livenessContinuationReason),
+          instruction: readNonEmptyString(input.contextSnapshot.livenessContinuationInstruction),
+        }
+      : null,
     checkedOutByHarness: input.contextSnapshot[PAPERCLIP_HARNESS_CHECKOUT_KEY] === true,
     executionStage: Object.keys(executionStage).length > 0 ? executionStage : null,
     continuationSummary: continuationSummary

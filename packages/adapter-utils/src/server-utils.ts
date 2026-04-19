@@ -269,6 +269,15 @@ type PaperclipWakeContinuationSummary = {
   updatedAt: string | null;
 };
 
+type PaperclipWakeLivenessContinuation = {
+  attempt: number | null;
+  maxAttempts: number | null;
+  sourceRunId: string | null;
+  state: string | null;
+  reason: string | null;
+  instruction: string | null;
+};
+
 type PaperclipWakeChildIssueSummary = {
   id: string | null;
   identifier: string | null;
@@ -284,6 +293,7 @@ type PaperclipWakePayload = {
   checkedOutByHarness: boolean;
   executionStage: PaperclipWakeExecutionStage | null;
   continuationSummary: PaperclipWakeContinuationSummary | null;
+  livenessContinuation: PaperclipWakeLivenessContinuation | null;
   childIssueSummaries: PaperclipWakeChildIssueSummary[];
   childIssueSummaryTruncated: boolean;
   commentIds: string[];
@@ -339,6 +349,25 @@ function normalizePaperclipWakeContinuationSummary(value: unknown): PaperclipWak
     body,
     bodyTruncated: asBoolean(summary.bodyTruncated, false),
     updatedAt: asString(summary.updatedAt, "").trim() || null,
+  };
+}
+
+function normalizePaperclipWakeLivenessContinuation(value: unknown): PaperclipWakeLivenessContinuation | null {
+  const continuation = parseObject(value);
+  const attempt = asNumber(continuation.attempt, 0);
+  const maxAttempts = asNumber(continuation.maxAttempts, 0);
+  const sourceRunId = asString(continuation.sourceRunId, "").trim() || null;
+  const state = asString(continuation.state, "").trim() || null;
+  const reason = asString(continuation.reason, "").trim() || null;
+  const instruction = asString(continuation.instruction, "").trim() || null;
+  if (!attempt && !maxAttempts && !sourceRunId && !state && !reason && !instruction) return null;
+  return {
+    attempt: attempt > 0 ? attempt : null,
+    maxAttempts: maxAttempts > 0 ? maxAttempts : null,
+    sourceRunId,
+    state,
+    reason,
+    instruction,
   };
 }
 
@@ -413,13 +442,14 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
     : [];
   const executionStage = normalizePaperclipWakeExecutionStage(payload.executionStage);
   const continuationSummary = normalizePaperclipWakeContinuationSummary(payload.continuationSummary);
+  const livenessContinuation = normalizePaperclipWakeLivenessContinuation(payload.livenessContinuation);
   const childIssueSummaries = Array.isArray(payload.childIssueSummaries)
     ? payload.childIssueSummaries
         .map((entry) => normalizePaperclipWakeChildIssueSummary(entry))
         .filter((entry): entry is PaperclipWakeChildIssueSummary => Boolean(entry))
     : [];
 
-  if (comments.length === 0 && commentIds.length === 0 && childIssueSummaries.length === 0 && !executionStage && !continuationSummary && !normalizePaperclipWakeIssue(payload.issue)) {
+  if (comments.length === 0 && commentIds.length === 0 && childIssueSummaries.length === 0 && !executionStage && !continuationSummary && !livenessContinuation && !normalizePaperclipWakeIssue(payload.issue)) {
     return null;
   }
 
@@ -429,6 +459,7 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
     checkedOutByHarness: asBoolean(payload.checkedOutByHarness, false),
     executionStage,
     continuationSummary,
+    livenessContinuation,
     childIssueSummaries,
     childIssueSummaryTruncated: asBoolean(payload.childIssueSummaryTruncated, false),
     commentIds,
@@ -547,6 +578,28 @@ export function renderPaperclipWakePrompt(
     );
     if (normalized.continuationSummary.bodyTruncated) {
       lines.push("[continuation summary truncated]");
+    }
+  }
+
+  if (normalized.livenessContinuation) {
+    const continuation = normalized.livenessContinuation;
+    lines.push("", "Run liveness continuation:");
+    if (continuation.attempt) {
+      lines.push(
+        `- attempt: ${continuation.attempt}${continuation.maxAttempts ? `/${continuation.maxAttempts}` : ""}`,
+      );
+    }
+    if (continuation.sourceRunId) {
+      lines.push(`- source run: ${continuation.sourceRunId}`);
+    }
+    if (continuation.state) {
+      lines.push(`- liveness state: ${continuation.state}`);
+    }
+    if (continuation.reason) {
+      lines.push(`- reason: ${continuation.reason}`);
+    }
+    if (continuation.instruction) {
+      lines.push(`- instruction: ${continuation.instruction}`);
     }
   }
 

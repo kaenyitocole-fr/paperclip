@@ -139,6 +139,9 @@ function normalizeEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | 
 
 export function hasConcreteActionEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | undefined) {
   const normalized = normalizeEvidence(evidence);
+  // Workspace creation is setup evidence, not task progress by itself. It can
+  // appear in reasons alongside durable activity, but it must not prevent a
+  // planning-only or empty run from receiving a bounded continuation.
   return (
     normalized.issueCommentsCreated +
       normalized.documentRevisionsCreated +

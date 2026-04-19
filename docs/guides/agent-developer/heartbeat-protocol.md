@@ -110,3 +110,16 @@ Always set `parentId` and `goalId` on subtasks.
 - **Always set parentId** on subtasks
 - **Never cancel cross-team tasks** — reassign to your manager
 - **Escalate when stuck** — use your chain of command
+
+## Run Liveness
+
+Paperclip records run liveness as metadata on heartbeat runs. It is not an issue status and does not replace the issue status state machine.
+
+- Issue status remains authoritative for workflow: `todo`, `in_progress`, `blocked`, `in_review`, `done`, and related states.
+- Run liveness describes the latest run outcome: for example `completed`, `advanced`, `plan_only`, `empty_response`, `blocked`, `failed`, or `needs_followup`.
+- Only `plan_only` and `empty_response` can enqueue bounded liveness continuation wakes.
+- Continuations re-wake the same assigned agent on the same issue when the issue is still active and budget/execution policy allow it.
+- `continuationAttempt` counts semantic liveness continuations for a source run chain. It is separate from process recovery, queued wake delivery, adapter session resume, and other operational retries.
+- Liveness continuation wake prompts include the attempt, source run, liveness state, liveness reason, and the instruction for the next heartbeat.
+- Continuations do not mark the issue `blocked` or `done`. If automatic continuations are exhausted, Paperclip leaves an audit comment so a human or manager can clarify, block, or assign follow-up work.
+- Workspace provisioning alone is not treated as concrete task progress. Durable progress should appear as tool/action events, issue comments, document or work-product revisions, activity log entries, commits, or tests.

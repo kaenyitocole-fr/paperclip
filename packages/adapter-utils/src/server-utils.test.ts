@@ -162,6 +162,14 @@ describe("renderPaperclipWakePrompt", () => {
         body: "# Continuation Summary\n\n## Next Action\n\n- Integrate child outputs.",
         updatedAt: "2026-04-18T12:00:00.000Z",
       },
+      livenessContinuation: {
+        attempt: 2,
+        maxAttempts: 2,
+        sourceRunId: "run-1",
+        state: "plan_only",
+        reason: "Run described future work without concrete action evidence",
+        instruction: "Take the first concrete action now.",
+      },
       childIssueSummaries: [
         {
           id: "child-1",
@@ -178,6 +186,13 @@ describe("renderPaperclipWakePrompt", () => {
       continuationSummary: {
         body: expect.stringContaining("Continuation Summary"),
       },
+      livenessContinuation: {
+        attempt: 2,
+        maxAttempts: 2,
+        sourceRunId: "run-1",
+        state: "plan_only",
+        instruction: "Take the first concrete action now.",
+      },
       childIssueSummaries: [
         {
           identifier: "PAP-101",
@@ -189,6 +204,12 @@ describe("renderPaperclipWakePrompt", () => {
     const prompt = renderPaperclipWakePrompt(payload);
     expect(prompt).toContain("Issue continuation summary:");
     expect(prompt).toContain("Integrate child outputs.");
+    expect(prompt).toContain("Run liveness continuation:");
+    expect(prompt).toContain("- attempt: 2/2");
+    expect(prompt).toContain("- source run: run-1");
+    expect(prompt).toContain("- liveness state: plan_only");
+    expect(prompt).toContain("- reason: Run described future work without concrete action evidence");
+    expect(prompt).toContain("- instruction: Take the first concrete action now.");
     expect(prompt).toContain("Direct child issue summaries:");
     expect(prompt).toContain("PAP-101 Implement helper (done)");
     expect(prompt).toContain("Added the helper route and tests.");

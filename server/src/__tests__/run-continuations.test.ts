@@ -72,13 +72,20 @@ describe("run liveness continuations", () => {
       issueId,
       sourceRunId: runId,
       livenessState: "plan_only",
+      livenessReason: "Planned without acting",
       continuationAttempt: 1,
       maxContinuationAttempts: DEFAULT_MAX_LIVENESS_CONTINUATION_ATTEMPTS,
+      instruction: "Take the first concrete action now.",
     });
     expect(decision.contextSnapshot).toMatchObject({
       issueId,
       wakeReason: RUN_LIVENESS_CONTINUATION_REASON,
       livenessContinuationAttempt: 1,
+      livenessContinuationMaxAttempts: DEFAULT_MAX_LIVENESS_CONTINUATION_ATTEMPTS,
+      livenessContinuationSourceRunId: runId,
+      livenessContinuationState: "plan_only",
+      livenessContinuationReason: "Planned without acting",
+      livenessContinuationInstruction: "Take the first concrete action now.",
     });
   });
 

@@ -56,6 +56,22 @@ describe("run liveness classifier", () => {
     expect(classification.lastUsefulActionAt).toBe(latestEvidenceAt);
   });
 
+  it("does not treat workspace operations alone as concrete progress", () => {
+    const classification = classifyRunLiveness({
+      ...baseInput,
+      resultJson: {
+        summary: "I will inspect the repo next.",
+      },
+      evidence: {
+        workspaceOperationsCreated: 1,
+        latestEvidenceAt: new Date("2026-04-18T12:00:00Z"),
+      },
+    });
+
+    expect(classification.livenessState).toBe("plan_only");
+    expect(classification.lastUsefulActionAt).toBeNull();
+  });
+
   it("exempts planning/document tasks from plan-only retry classification", () => {
     const classification = classifyRunLiveness({
       ...baseInput,

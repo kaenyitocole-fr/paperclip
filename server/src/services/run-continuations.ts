@@ -176,8 +176,11 @@ export function decideRunLivenessContinuation(input: {
       taskKey: issue.id,
       wakeReason: RUN_LIVENESS_CONTINUATION_REASON,
       livenessContinuationAttempt: nextAttempt,
+      livenessContinuationMaxAttempts: maxAttempts,
       livenessContinuationSourceRunId: run.id,
       livenessContinuationState: livenessState,
+      livenessContinuationReason: livenessReason,
+      livenessContinuationInstruction: payload.instruction,
     },
   };
 }
