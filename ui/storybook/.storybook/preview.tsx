@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Preview } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "@/lib/router";
@@ -174,8 +174,10 @@ function StorybookProviders({
       }),
   );
 
-  applyStorybookTheme(theme);
-  installStorybookApiFixtures();
+  useEffect(() => {
+    applyStorybookTheme(theme);
+    installStorybookApiFixtures();
+  }, [theme]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -231,7 +233,7 @@ const preview: Preview = {
   parameters: {
     actions: { argTypesRegex: "^on[A-Z].*" },
     a11y: {
-      test: "todo",
+      test: "error",
     },
     backgrounds: {
       disable: true,
