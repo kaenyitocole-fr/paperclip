@@ -1670,14 +1670,6 @@ function isHeartbeatRunTerminalStatus(
   );
 }
 
-function terminalIssueStatusToRunOutcome(
-  issueStatus: string | null | undefined,
-): "succeeded" | "cancelled" | null {
-  if (issueStatus === "done") return "succeeded";
-  if (issueStatus === "cancelled") return "cancelled";
-  return null;
-}
-
 // A positive liveness check means some process currently owns the PID.
 // On Linux, PIDs can be recycled, so this is a best-effort signal rather
 // than proof that the original child is still alive.
@@ -6901,133 +6893,6 @@ export function heartbeatService(db: Db) {
     return wakeupIds.length;
   }
 
-  async function completeRunForTerminalIssue(input: {
-    runId: string;
-    issueId: string;
-    issueStatus: "done" | "cancelled";
-  }) {
-    const outcome = terminalIssueStatusToRunOutcome(input.issueStatus);
-    if (!outcome) return { outcome: "not_terminal_issue" as const };
-
-    const run = await getRun(input.runId);
-    if (!run) return { outcome: "missing_run" as const };
-    if (!CANCELLABLE_HEARTBEAT_RUN_STATUSES.includes(run.status as (typeof CANCELLABLE_HEARTBEAT_RUN_STATUSES)[number])) {
-      return { outcome: "run_not_active" as const, run };
-    }
-
-    const contextIssueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
-    if (contextIssueId !== input.issueId) {
-      return { outcome: "issue_mismatch" as const };
-    }
-
-    const issue = await db
-      .select({
-        id: issues.id,
-        companyId: issues.companyId,
-        status: issues.status,
-        executionRunId: issues.executionRunId,
-      })
-      .from(issues)
-      .where(and(eq(issues.id, input.issueId), eq(issues.companyId, run.companyId)))
-      .then((rows) => rows[0] ?? null);
-    if (!issue) return { outcome: "missing_issue" as const };
-    if (issue.status !== input.issueStatus) return { outcome: "issue_status_changed" as const };
-    if (issue.executionRunId && issue.executionRunId !== run.id) {
-      return { outcome: "issue_owned_by_other_run" as const };
-    }
-
-    const agent = await getAgent(run.agentId);
-    const reason =
-      input.issueStatus === "done"
-        ? "Run completed because its issue was marked done."
-        : "Run cancelled because its issue was cancelled.";
-
-    const running = runningProcesses.get(run.id);
-    if (running) {
-      await terminateHeartbeatRunProcess({
-        pid: running.child.pid ?? run.processPid,
-        processGroupId: running.processGroupId ?? run.processGroupId,
-        graceMs: Math.max(1, running.graceSec) * 1000,
-      });
-    } else if (run.processPid || run.processGroupId) {
-      await terminateHeartbeatRunProcess({
-        pid: run.processPid,
-        processGroupId: run.processGroupId,
-      });
-    }
-
-    const completed = await setRunStatus(run.id, outcome, {
-      finishedAt: new Date(),
-      error: outcome === "cancelled" ? reason : null,
-      errorCode: outcome === "cancelled" ? "issue_cancelled" : null,
-      ...(agent ? {
-        resultJson: mergeRunStopMetadataForAgent(agent, outcome, {
-          resultJson: {
-            ...parseObject(run.resultJson),
-            summary: reason,
-          },
-          errorCode: outcome === "cancelled" ? "issue_cancelled" : null,
-          errorMessage: outcome === "cancelled" ? reason : null,
-        }),
-      } : {}),
-    });
-
-    await setWakeupStatus(run.wakeupRequestId, outcome === "succeeded" ? "completed" : outcome, {
-      finishedAt: new Date(),
-      error: outcome === "cancelled" ? reason : null,
-    });
-
-    if (completed) {
-      await appendRunEvent(completed, await nextRunEventSeq(completed.id), {
-        eventType: "lifecycle",
-        stream: "system",
-        level: outcome === "succeeded" ? "info" : "warn",
-        message: reason,
-      });
-      await releaseIssueExecutionAndPromote(completed);
-    }
-
-    runningProcesses.delete(run.id);
-    await finalizeAgentStatus(run.agentId, outcome);
-    await startNextQueuedRunForAgent(run.agentId);
-    return { outcome: "completed" as const, run: completed };
-  }
-
-  async function completeRunsForTerminalIssue(input: {
-    issueId: string;
-    issueStatus: "done" | "cancelled";
-  }) {
-    const outcome = terminalIssueStatusToRunOutcome(input.issueStatus);
-    if (!outcome) return { completed: 0, results: [] };
-
-    const activeRuns = await db
-      .select({ id: heartbeatRuns.id })
-      .from(heartbeatRuns)
-      .where(
-        and(
-          inArray(heartbeatRuns.status, [...CANCELLABLE_HEARTBEAT_RUN_STATUSES]),
-          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${input.issueId}`,
-        ),
-      )
-      .orderBy(asc(heartbeatRuns.createdAt));
-
-    const results: Array<Awaited<ReturnType<typeof completeRunForTerminalIssue>>> = [];
-    for (const run of activeRuns) {
-      results.push(
-        await completeRunForTerminalIssue({
-          runId: run.id,
-          issueId: input.issueId,
-          issueStatus: input.issueStatus,
-        }),
-      );
-    }
-
-    return {
-      completed: results.filter((result) => result.outcome === "completed").length,
-      results,
-    };
-  }
-
   async function cancelRunInternal(runId: string, reason = "Cancelled by control plane") {
     const run = await getRun(runId);
     if (!run) throw notFound("Heartbeat run not found");
@@ -7447,10 +7312,6 @@ export function heartbeatService(db: Db) {
     },
 
     cancelRun: (runId: string) => cancelRunInternal(runId),
-
-    completeRunForTerminalIssue,
-
-    completeRunsForTerminalIssue,
 
     cancelActiveForAgent: (agentId: string) => cancelActiveForAgentInternal(agentId),
 
