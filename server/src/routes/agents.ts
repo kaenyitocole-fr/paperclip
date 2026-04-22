@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable } from "@paperclipai/db";
+import { agents as agentsTable, companies, heartbeatRunWatchdogDecisions, heartbeatRuns, issues as issuesTable } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   agentSkillSyncSchema,
@@ -2482,6 +2482,7 @@ export function agentRoutes(db: Db) {
 
     const columns = {
       id: heartbeatRuns.id,
+      companyId: heartbeatRuns.companyId,
       status: heartbeatRuns.status,
       invocationSource: heartbeatRuns.invocationSource,
       triggerDetail: heartbeatRuns.triggerDetail,
@@ -2496,6 +2497,11 @@ export function agentRoutes(db: Db) {
       continuationAttempt: heartbeatRuns.continuationAttempt,
       lastUsefulActionAt: heartbeatRuns.lastUsefulActionAt,
       nextAction: heartbeatRuns.nextAction,
+      lastOutputAt: heartbeatRuns.lastOutputAt,
+      lastOutputSeq: heartbeatRuns.lastOutputSeq,
+      lastOutputStream: heartbeatRuns.lastOutputStream,
+      lastOutputBytes: heartbeatRuns.lastOutputBytes,
+      processStartedAt: heartbeatRuns.processStartedAt,
       issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
     };
 
@@ -2527,11 +2533,18 @@ export function agentRoutes(db: Db) {
         .orderBy(desc(heartbeatRuns.createdAt))
         .limit(minCount - liveRuns.length);
 
-      res.json([...liveRuns, ...recentRuns]);
+      const rows = [...liveRuns, ...recentRuns];
+      res.json(await Promise.all(rows.map(async (run) => ({
+        ...run,
+        outputSilence: await heartbeat.buildRunOutputSilence(run),
+      }))));
       return;
     }
 
-    res.json(liveRuns);
+    res.json(await Promise.all(liveRuns.map(async (run) => ({
+      ...run,
+      outputSilence: await heartbeat.buildRunOutputSilence(run),
+    }))));
   });
 
   router.get("/heartbeat-runs/:runId", async (req, res) => {
@@ -2545,7 +2558,7 @@ export function agentRoutes(db: Db) {
     const retryExhaustedReason = await heartbeat.getRetryExhaustedReason(runId);
     res.json(
       redactCurrentUserValue(
-        { ...run, retryExhaustedReason },
+        { ...run, retryExhaustedReason, outputSilence: await heartbeat.buildRunOutputSilence(run) },
         await getCurrentUserRedactionOptions(),
       ),
     );
@@ -2573,6 +2586,90 @@ export function agentRoutes(db: Db) {
     }
 
     res.json(run);
+  });
+
+  router.post("/heartbeat-runs/:runId/watchdog-decisions", async (req, res) => {
+    const runId = req.params.runId as string;
+    const existing = await heartbeat.getRun(runId);
+    if (!existing) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const decision = typeof req.body?.decision === "string" ? req.body.decision : "";
+    if (!["snooze", "continue", "dismissed_false_positive"].includes(decision)) {
+      res.status(400).json({ error: "Unsupported watchdog decision" });
+      return;
+    }
+    const evaluationIssueId = typeof req.body?.evaluationIssueId === "string" ? req.body.evaluationIssueId : null;
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 4000) : null;
+    const snoozedUntil = decision === "snooze"
+      ? new Date(String(req.body?.snoozedUntil ?? ""))
+      : null;
+    if (decision === "snooze" && (!snoozedUntil || Number.isNaN(snoozedUntil.getTime()) || snoozedUntil <= new Date())) {
+      res.status(400).json({ error: "snoozedUntil must be a future ISO datetime" });
+      return;
+    }
+
+    let evaluationIssue: { id: string; assigneeAgentId: string | null; companyId: string } | null = null;
+    if (evaluationIssueId) {
+      evaluationIssue = await db
+        .select({
+          id: issuesTable.id,
+          assigneeAgentId: issuesTable.assigneeAgentId,
+          companyId: issuesTable.companyId,
+        })
+        .from(issuesTable)
+        .where(and(eq(issuesTable.id, evaluationIssueId), eq(issuesTable.companyId, existing.companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!evaluationIssue) {
+        res.status(404).json({ error: "Evaluation issue not found" });
+        return;
+      }
+    }
+
+    const boardActor = req.actor.type === "board";
+    const assignedRecoveryOwner =
+      req.actor.type === "agent" &&
+      req.actor.agentId &&
+      evaluationIssue?.assigneeAgentId === req.actor.agentId;
+    if (!boardActor && !assignedRecoveryOwner) {
+      throw forbidden("Only the board or the assigned recovery owner can record watchdog decisions");
+    }
+
+    const [row] = await db
+      .insert(heartbeatRunWatchdogDecisions)
+      .values({
+        companyId: existing.companyId,
+        runId: existing.id,
+        evaluationIssueId,
+        decision,
+        snoozedUntil,
+        reason,
+        createdByAgentId: req.actor.type === "agent" ? req.actor.agentId ?? null : null,
+        createdByUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,
+        createdByRunId: typeof req.body?.createdByRunId === "string" ? req.body.createdByRunId : null,
+      })
+      .returning();
+
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: req.actor.type === "agent" ? "agent" : "user",
+      actorId: req.actor.type === "agent" ? req.actor.agentId ?? "agent" : req.actor.userId ?? "board",
+      agentId: req.actor.type === "agent" ? req.actor.agentId ?? null : null,
+      runId: existing.id,
+      action: decision === "snooze" ? "heartbeat.watchdog_snoozed" : "heartbeat.watchdog_decision_recorded",
+      entityType: "heartbeat_run",
+      entityId: existing.id,
+      details: {
+        decision,
+        evaluationIssueId,
+        snoozedUntil: snoozedUntil?.toISOString() ?? null,
+        reason,
+      },
+    });
+
+    res.json(row);
   });
 
   router.get("/heartbeat-runs/:runId/events", async (req, res) => {
@@ -2680,6 +2777,11 @@ export function agentRoutes(db: Db) {
         continuationAttempt: heartbeatRuns.continuationAttempt,
         lastUsefulActionAt: heartbeatRuns.lastUsefulActionAt,
         nextAction: heartbeatRuns.nextAction,
+        lastOutputAt: heartbeatRuns.lastOutputAt,
+        lastOutputSeq: heartbeatRuns.lastOutputSeq,
+        lastOutputStream: heartbeatRuns.lastOutputStream,
+        lastOutputBytes: heartbeatRuns.lastOutputBytes,
+        processStartedAt: heartbeatRuns.processStartedAt,
       })
       .from(heartbeatRuns)
       .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))
@@ -2692,7 +2794,10 @@ export function agentRoutes(db: Db) {
       )
       .orderBy(desc(heartbeatRuns.createdAt));
 
-    res.json(liveRuns);
+    res.json(await Promise.all(liveRuns.map(async (run) => ({
+      ...run,
+      outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
+    }))));
   });
 
   router.get("/issues/:issueId/active-run", async (req, res) => {
@@ -2740,6 +2845,7 @@ export function agentRoutes(db: Db) {
       agentId: agent.id,
       agentName: agent.name,
       adapterType: agent.adapterType,
+      outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
     });
   });
 
