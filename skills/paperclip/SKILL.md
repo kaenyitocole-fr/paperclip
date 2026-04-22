@@ -128,60 +128,6 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. When a follow-up issue needs to stay on the same code change but is not a true child task, set `inheritExecutionWorkspaceFromIssueId` to the source issue. Set `billingCode` for cross-team work.
 
-## Requesting Issue-Thread Confirmations
-
-Use a `request_confirmation` issue-thread interaction when the board/user needs to explicitly accept or reject an issue-scoped proposal, plan, or next step. Do this instead of asking for a yes/no decision in markdown or inventing hidden comment conventions.
-
-Use the approval system (`request_board_approval`, `hire_agent`, etc.) for governed actions that need formal approval records. Use `request_confirmation` for inline issue-thread decisions such as plan acceptance, configuration choices, launch choices, or "proceed with this proposal?" prompts.
-
-Create the confirmation on the current issue:
-
-```json
-POST /api/issues/{issueId}/interactions
-{
-  "kind": "request_confirmation",
-  "idempotencyKey": "confirmation:{issueId}:{targetKey}:{targetVersion}",
-  "title": "Plan approval",
-  "summary": "Waiting for the board/user to accept or request changes.",
-  "continuationPolicy": "wake_assignee",
-  "payload": {
-    "version": 1,
-    "prompt": "Accept this plan?",
-    "acceptLabel": "Accept plan",
-    "rejectLabel": "Request changes",
-    "rejectRequiresReason": true,
-    "rejectReasonLabel": "What needs to change?",
-    "detailsMarkdown": "Review the latest plan document before accepting.",
-    "supersedeOnUserComment": true,
-    "target": {
-      "type": "issue_document",
-      "issueId": "{issueId}",
-      "documentId": "{documentId}",
-      "key": "plan",
-      "revisionId": "{latestRevisionId}",
-      "revisionNumber": 1
-    }
-  }
-}
-```
-
-Notes:
-
-- `continuationPolicy: "wake_assignee"` wakes the assignee only when a `request_confirmation` is accepted. Rejections do not wake the assignee by default; the board/user can add a normal comment if they want revisions.
-- Use idempotency keys that include the target and version, for example `confirmation:${issueId}:plan:${latestRevisionId}`. Do not reuse the old key after changing the plan or proposal.
-- Set `supersedeOnUserComment: true` when a later board/user comment should make the pending confirmation stale. If you are woken by that comment, revise the artifact or proposal, then create a fresh confirmation if confirmation is still needed.
-- A versioned `issue_document` target prevents stale accepts. For plans, bind the confirmation to the latest `plan` revision.
-
-### Plan approval workflow
-
-When a task asks for a plan that needs approval before implementation:
-
-1. Create or update the issue document with key `plan`.
-2. Fetch the saved document or document revision so you have the latest `documentId`, `latestRevisionId`, and `latestRevisionNumber`.
-3. Create a `request_confirmation` bound to that `plan` revision with `supersedeOnUserComment: true` and `continuationPolicy: "wake_assignee"`.
-4. Leave the issue open or in review as appropriate. Do not create implementation subtasks until the confirmation is accepted.
-5. If the user comments instead of clicking the card, treat that as superseding feedback. Update the plan and create a new confirmation if approval is still required.
-
 ## Issue Dependencies (Blockers)
 
 Express "A is blocked by B" as first-class blockers so dependent work auto-resumes.
@@ -341,7 +287,7 @@ If the issue identifier is available, prefer the document deep link over a plain
 
 If you're asked to make a plan, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan and leave it in progress.
 
-If the plan needs explicit approval before implementation, use the Plan approval workflow above: update the `plan` document, create a `request_confirmation` bound to the latest revision, and wait for acceptance before creating implementation subtasks.
+If the plan needs explicit approval before implementation, update the `plan` document, create a `request_confirmation` issue-thread interaction bound to the latest plan revision, and wait for acceptance before creating implementation subtasks. See `references/api-reference.md` for the interaction payload.
 
 Recommended API flow:
 
@@ -357,114 +303,33 @@ PUT /api/issues/{issueId}/documents/plan
 
 If `plan` already exists, fetch the current document first and send its latest `baseRevisionId` when you update it.
 
-## Setting Agent Instructions Path
+## Key Endpoints (Hot Routes)
 
-Use the dedicated route instead of generic `PATCH /api/agents/:id` when you need to set an agent's instructions markdown path (for example `AGENTS.md`).
+| Action                                | Endpoint                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| My identity                           | `GET /api/agents/me`                                                                                 |
+| My compact inbox                      | `GET /api/agents/me/inbox-lite`                                                                      |
+| My assignments                        | `GET /api/companies/:companyId/issues?assigneeAgentId=:id&status=todo,in_progress,in_review,blocked` |
+| Checkout task                         | `POST /api/issues/:issueId/checkout`                                                                 |
+| Get task + ancestors                  | `GET /api/issues/:issueId`                                                                           |
+| Compact heartbeat context             | `GET /api/issues/:issueId/heartbeat-context`                                                         |
+| Update task                           | `PATCH /api/issues/:issueId` (optional `comment` field)                                              |
+| Get comments / delta / single         | `GET /api/issues/:issueId/comments[?after=:commentId&order=asc]` • `/comments/:commentId`            |
+| Add comment                           | `POST /api/issues/:issueId/comments`                                                                 |
+| Issue-thread interactions             | `GET\|POST /api/issues/:issueId/interactions` • `POST /api/issues/:issueId/interactions/:interactionId/{accept,reject,respond}` |
+| Create subtask                        | `POST /api/companies/:companyId/issues`                                                              |
+| Release task                          | `POST /api/issues/:issueId/release`                                                                  |
+| Search issues                         | `GET /api/companies/:companyId/issues?q=search+term`                                                 |
+| Issue documents (list/get/put)        | `GET\|PUT /api/issues/:issueId/documents[/:key]`                                                     |
+| Create approval                       | `POST /api/companies/:companyId/approvals`                                                           |
+| Upload attachment (multipart, `file`) | `POST /api/companies/:companyId/issues/:issueId/attachments`                                         |
+| List / get / delete attachment        | `GET /api/issues/:issueId/attachments` • `GET\|DELETE /api/attachments/:attachmentId[/content]`      |
+| Execution workspace + runtime         | `GET /api/execution-workspaces/:id` • `POST …/runtime-services/:action`                              |
+| Set agent instructions path           | `PATCH /api/agents/:agentId/instructions-path`                                                       |
+| List agents                           | `GET /api/companies/:companyId/agents`                                                               |
+| Dashboard                             | `GET /api/companies/:companyId/dashboard`                                                            |
 
-```bash
-PATCH /api/agents/{agentId}/instructions-path
-{
-  "path": "agents/cmo/AGENTS.md"
-}
-```
-
-Rules:
-
-- Allowed for: the target agent itself, or an ancestor manager in that agent's reporting chain.
-- For `codex_local` and `claude_local`, default config key is `instructionsFilePath`.
-- Relative paths are resolved against the target agent's `adapterConfig.cwd`; absolute paths are accepted as-is.
-- To clear the path, send `{ "path": null }`.
-- For adapters with a different key, provide it explicitly:
-
-```bash
-PATCH /api/agents/{agentId}/instructions-path
-{
-  "path": "/absolute/path/to/AGENTS.md",
-  "adapterConfigKey": "yourAdapterSpecificPathField"
-}
-```
-
-## Key Endpoints (Quick Reference)
-
-| Action                                    | Endpoint                                                                                   |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| My identity                               | `GET /api/agents/me`                                                                       |
-| My compact inbox                          | `GET /api/agents/me/inbox-lite`                                                            |
-| Report a user's Mine inbox view           | `GET /api/agents/me/inbox/mine?userId=:userId`                                             |
-| My assignments                            | `GET /api/companies/:companyId/issues?assigneeAgentId=:id&status=todo,in_progress,in_review,blocked` |
-| Checkout task                             | `POST /api/issues/:issueId/checkout`                                                       |
-| Get task + ancestors                      | `GET /api/issues/:issueId`                                                                 |
-| List issue documents                      | `GET /api/issues/:issueId/documents`                                                       |
-| Get issue document                        | `GET /api/issues/:issueId/documents/:key`                                                  |
-| Create/update issue document              | `PUT /api/issues/:issueId/documents/:key`                                                  |
-| Get issue document revisions              | `GET /api/issues/:issueId/documents/:key/revisions`                                        |
-| Get compact heartbeat context             | `GET /api/issues/:issueId/heartbeat-context`                                               |
-| Get comments                              | `GET /api/issues/:issueId/comments`                                                        |
-| Get comment delta                         | `GET /api/issues/:issueId/comments?after=:commentId&order=asc`                             |
-| Get specific comment                      | `GET /api/issues/:issueId/comments/:commentId`                                             |
-| Update task                               | `PATCH /api/issues/:issueId` (optional `comment` field)                                    |
-| Add comment                               | `POST /api/issues/:issueId/comments`                                                       |
-| List issue-thread interactions            | `GET /api/issues/:issueId/interactions`                                                    |
-| Create issue-thread interaction           | `POST /api/issues/:issueId/interactions` (`suggest_tasks`, `ask_user_questions`, `request_confirmation`) |
-| Accept issue-thread interaction           | `POST /api/issues/:issueId/interactions/:interactionId/accept`                             |
-| Reject issue-thread interaction           | `POST /api/issues/:issueId/interactions/:interactionId/reject`                             |
-| Respond to question interaction           | `POST /api/issues/:issueId/interactions/:interactionId/respond`                            |
-| Create subtask                            | `POST /api/companies/:companyId/issues`                                                    |
-| Generate OpenClaw invite prompt (CEO)     | `POST /api/companies/:companyId/openclaw/invite-prompt`                                    |
-| Create project                            | `POST /api/companies/:companyId/projects`                                                  |
-| Create project workspace                  | `POST /api/projects/:projectId/workspaces`                                                 |
-| Set instructions path                     | `PATCH /api/agents/:agentId/instructions-path`                                             |
-| Release task                              | `POST /api/issues/:issueId/release`                                                        |
-| List agents                               | `GET /api/companies/:companyId/agents`                                                     |
-| Create approval                           | `POST /api/companies/:companyId/approvals`                                                 |
-| List company skills                       | `GET /api/companies/:companyId/skills`                                                     |
-| Import company skills                     | `POST /api/companies/:companyId/skills/import`                                             |
-| Scan project workspaces for skills        | `POST /api/companies/:companyId/skills/scan-projects`                                      |
-| Sync agent desired skills                 | `POST /api/agents/:agentId/skills/sync`                                                    |
-| Preview CEO-safe company import           | `POST /api/companies/:companyId/imports/preview`                                           |
-| Apply CEO-safe company import             | `POST /api/companies/:companyId/imports/apply`                                             |
-| Preview company export                    | `POST /api/companies/:companyId/exports/preview`                                           |
-| Build company export                      | `POST /api/companies/:companyId/exports`                                                   |
-| Dashboard                                 | `GET /api/companies/:companyId/dashboard`                                                  |
-| Search issues                             | `GET /api/companies/:companyId/issues?q=search+term`                                       |
-| Upload attachment (multipart, field=file) | `POST /api/companies/:companyId/issues/:issueId/attachments`                               |
-| List issue attachments                    | `GET /api/issues/:issueId/attachments`                                                     |
-| Get attachment content                    | `GET /api/attachments/:attachmentId/content`                                               |
-| Delete attachment                         | `DELETE /api/attachments/:attachmentId`                                                    |
-| List routines                             | `GET /api/companies/:companyId/routines`                                                   |
-| Get routine                               | `GET /api/routines/:routineId`                                                             |
-| Create routine                            | `POST /api/companies/:companyId/routines`                                                  |
-| Update routine                            | `PATCH /api/routines/:routineId`                                                           |
-| Add trigger                               | `POST /api/routines/:routineId/triggers`                                                   |
-| Update trigger                            | `PATCH /api/routine-triggers/:triggerId`                                                   |
-| Delete trigger                            | `DELETE /api/routine-triggers/:triggerId`                                                  |
-| Rotate webhook secret                     | `POST /api/routine-triggers/:triggerId/rotate-secret`                                      |
-| Manual run                                | `POST /api/routines/:routineId/run`                                                        |
-| Fire webhook (external)                   | `POST /api/routine-triggers/public/:publicId/fire`                                         |
-| List runs                                 | `GET /api/routines/:routineId/runs`                                                        |
-
-## Company Import / Export
-
-Use the company-scoped routes when a CEO agent needs to inspect or move package content.
-
-- CEO-safe imports:
-  - `POST /api/companies/{companyId}/imports/preview`
-  - `POST /api/companies/{companyId}/imports/apply`
-- Allowed callers: board users and the CEO agent of that same company.
-- Safe import rules:
-  - existing-company imports are non-destructive
-  - `replace` is rejected
-  - collisions resolve with `rename` or `skip`
-  - issues are always created as new issues
-- CEO agents may use the safe routes with `target.mode = "new_company"` to create a new company directly. Paperclip copies active user memberships from the source company so the new company is not orphaned.
-
-For export, preview first and keep tasks explicit:
-
-- `POST /api/companies/{companyId}/exports/preview`
-- `POST /api/companies/{companyId}/exports`
-- Export preview defaults to `issues: false`
-- Add `issues` or `projectIssues` only when you intentionally need task files
-- Use `selectedFiles` to narrow the final package to specific agents, skills, projects, or tasks after you inspect the preview inventory
+Full endpoint table (company imports/exports, OpenClaw invites, company skills, routines, etc.) lives in `references/api-reference.md`.
 
 ## Searching Issues
 
