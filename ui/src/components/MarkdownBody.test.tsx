@@ -156,7 +156,9 @@ describe("MarkdownBody", () => {
     expect(html).toContain('href="/issues/PAP-1271"');
     expect(html).toContain("text-green-600");
     expect(html).toContain(">PAP-1271<");
-    expect(html).toContain("paperclip-mention-chip--issue");
+    expect(html).toContain('data-mention-kind="issue"');
+    expect(html).toContain("paperclip-markdown-issue-ref");
+    expect(html).not.toContain("paperclip-mention-chip--issue");
   });
 
   it("rewrites full issue URLs to internal issue links", () => {
@@ -167,7 +169,8 @@ describe("MarkdownBody", () => {
     expect(html).toContain('href="/issues/PAP-1179"');
     expect(html).toContain("text-red-600");
     expect(html).toContain(">http://localhost:3100/PAP/issues/PAP-1179<");
-    expect(html).toContain("paperclip-mention-chip--issue");
+    expect(html).toContain('data-mention-kind="issue"');
+    expect(html).not.toContain("paperclip-mention-chip--issue");
   });
 
   it("rewrites issue scheme links to internal issue links", () => {
@@ -192,7 +195,7 @@ describe("MarkdownBody", () => {
     expect(html).toContain('href="/issues/PAP-1271"');
     expect(html).toContain('<code style="overflow-wrap:anywhere;word-break:break-word">PAP-1271</code>');
     expect(html).toContain("text-green-600");
-    expect(html).toContain("paperclip-mention-chip--issue");
+    expect(html).toContain("paperclip-markdown-issue-ref");
   });
 
   it("can opt out of issue reference linkification for offline previews", () => {
@@ -278,7 +281,7 @@ describe("MarkdownBody", () => {
     expect(html).toContain('style="max-width:100%;overflow-x:auto"');
   });
 
-  it("renders internal issue links and bare identifiers as issue chips", () => {
+  it("renders internal issue links and bare identifiers as inline issue refs", () => {
     const html = renderMarkdown(`See PAP-42 and [linked task](${buildIssueReferenceHref("PAP-77")}) for follow-up.`, [
       { identifier: "PAP-42", status: "done" },
       { identifier: "PAP-77", status: "blocked" },
@@ -287,5 +290,7 @@ describe("MarkdownBody", () => {
     expect(html).toContain('href="/issues/PAP-42"');
     expect(html).toContain('href="/issues/PAP-77"');
     expect(html).toContain('data-mention-kind="issue"');
+    expect(html).toContain("paperclip-markdown-issue-ref");
+    expect(html).not.toContain("paperclip-mention-chip--issue");
   });
 });

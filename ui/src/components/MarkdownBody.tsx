@@ -4,13 +4,14 @@ import { Github } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../lib/utils";
+import { Link } from "@/lib/router";
 import { useTheme } from "../context/ThemeContext";
 import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { parseIssueReferenceFromHref, remarkLinkIssueReferences } from "../lib/issue-reference";
 import { remarkSoftBreaks } from "../lib/remark-soft-breaks";
-import { IssueReferencePill } from "./IssueReferencePill";
+import { StatusIcon } from "./StatusIcon";
 
 interface MarkdownBodyProps {
   children: string;
@@ -39,11 +40,24 @@ function MarkdownIssueLink({
     staleTime: 60_000,
   });
 
-  const issue = data
-    ? { id: data.id, identifier: data.identifier ?? issuePathId, title: data.title ?? issuePathId, status: data.status }
-    : { id: issuePathId, identifier: issuePathId, title: issuePathId };
+  const identifier = data?.identifier ?? issuePathId;
+  const title = data?.title ?? identifier;
+  const status = data?.status;
 
-  return <IssueReferencePill issue={issue}>{children}</IssueReferencePill>;
+  return (
+    <Link
+      to={`/issues/${identifier}`}
+      data-mention-kind="issue"
+      className="paperclip-markdown-issue-ref"
+      title={title}
+      aria-label={`Issue ${identifier}: ${title}`}
+    >
+      {status ? (
+        <StatusIcon status={status} className="mr-1 h-3 w-3 align-[-0.125em]" />
+      ) : null}
+      {children}
+    </Link>
+  );
 }
 
 function loadMermaid() {

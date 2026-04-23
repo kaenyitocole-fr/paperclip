@@ -780,6 +780,13 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   background: color-mix(in oklab, var(--accent) 42%, transparent);
 }
 
+/* Inline issue references in markdown: no pill chrome, just a status icon
+   beside the link label — keeps the pair from splitting across lines. */
+.paperclip-markdown-issue-ref {
+  display: inline;
+  white-space: nowrap;
+}
+
 .dark .paperclip-markdown a {
   color: color-mix(in oklab, var(--foreground) 80%, #58a6ff 20%);
 }
