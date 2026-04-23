@@ -75,7 +75,7 @@ import {
 import {
   classifyIssueGraphLiveness,
   type IssueLivenessFinding,
-} from "./issue-liveness.js";
+} from "./recovery/index.js";
 import { logActivity, publishPluginDomainEvent, type LogActivityInput } from "./activity-log.js";
 import {
   buildWorkspaceReadyComment,
@@ -113,12 +113,15 @@ import {
 import { resolveEnvironmentDriverConfigForRuntime } from "./environment-config.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import {
+  RECOVERY_ORIGIN_KINDS,
   RUN_LIVENESS_CONTINUATION_REASON,
+  buildIssueGraphLivenessLeafKey,
   buildRunLivenessContinuationIdempotencyKey,
   decideRunLivenessContinuation,
   findExistingRunLivenessContinuationWake,
+  parseIssueGraphLivenessIncidentKey,
   readContinuationAttempt,
-} from "./run-continuations.js";
+} from "./recovery/index.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -163,8 +166,8 @@ const ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_MIN_STALE_MS = 24 * 60 * 60 * 1000;
 export const ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS = 60 * 60 * 1000;
 export const ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS = 4 * 60 * 60 * 1000;
 export const ACTIVE_RUN_OUTPUT_PROGRESS_FLUSH_INTERVAL_MS = 60 * 1000;
-const STALE_ACTIVE_RUN_EVALUATION_ORIGIN_KIND = "stale_active_run_evaluation";
-const STRANDED_ISSUE_RECOVERY_ORIGIN_KIND = "stranded_issue_recovery";
+const STALE_ACTIVE_RUN_EVALUATION_ORIGIN_KIND = RECOVERY_ORIGIN_KINDS.staleActiveRunEvaluation;
+const STRANDED_ISSUE_RECOVERY_ORIGIN_KIND = RECOVERY_ORIGIN_KINDS.strandedIssueRecovery;
 const ACTIVE_RUN_OUTPUT_EVIDENCE_TAIL_BYTES = 8 * 1024;
 export const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_DELAYS_MS = [
   2 * 60 * 1000,
@@ -5301,7 +5304,7 @@ export function heartbeatService(db: Db) {
         .where(
           and(
             isNull(issues.hiddenAt),
-            notInArray(issues.originKind, ["harness_liveness_escalation"]),
+            notInArray(issues.originKind, [RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation]),
           ),
         ),
       db
@@ -5344,7 +5347,7 @@ export function heartbeatService(db: Db) {
         .where(
           and(
             isNull(issues.hiddenAt),
-            notInArray(issues.originKind, ["harness_liveness_escalation"]),
+            notInArray(issues.originKind, [RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation]),
             inArray(heartbeatRuns.status, [...EXECUTION_PATH_HEARTBEAT_RUN_STATUSES]),
           ),
         ),
@@ -5390,7 +5393,7 @@ export function heartbeatService(db: Db) {
       .where(
         and(
           eq(issues.companyId, companyId),
-          eq(issues.originKind, "harness_liveness_escalation"),
+          eq(issues.originKind, RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation),
           eq(issues.originId, incidentKey),
           isNull(issues.hiddenAt),
           notInArray(issues.status, ["done", "cancelled"]),
@@ -5402,11 +5405,7 @@ export function heartbeatService(db: Db) {
 
   function parseLivenessIncidentKey(incidentKey: string | null | undefined) {
     if (!incidentKey) return null;
-    const parts = incidentKey.split(":");
-    if (parts.length !== 5 || parts[0] !== "harness_liveness") return null;
-    const [, companyId, issueId, state, leafIssueId] = parts;
-    if (!companyId || !issueId || !state || !leafIssueId) return null;
-    return { companyId, issueId, state, leafIssueId };
+    return parseIssueGraphLivenessIncidentKey(incidentKey);
   }
 
   function livenessRecoveryLeafIssueId(finding: IssueLivenessFinding) {
@@ -5414,16 +5413,15 @@ export function heartbeatService(db: Db) {
   }
 
   function livenessRecoveryLeafFingerprint(finding: IssueLivenessFinding) {
-    return [
-      "harness_liveness_leaf",
-      finding.companyId,
-      finding.state,
-      livenessRecoveryLeafIssueId(finding),
-    ].join(":");
+    return buildIssueGraphLivenessLeafKey({
+      companyId: finding.companyId,
+      state: finding.state,
+      leafIssueId: livenessRecoveryLeafIssueId(finding),
+    });
   }
 
   function livenessRecoveryLeafKey(companyId: string, state: string, leafIssueId: string) {
-    return ["harness_liveness_leaf", companyId, state, leafIssueId].join(":");
+    return buildIssueGraphLivenessLeafKey({ companyId, state, leafIssueId });
   }
 
   async function findOpenLivenessRecoveryIssueForLeaf(finding: IssueLivenessFinding) {
@@ -5433,7 +5431,7 @@ export function heartbeatService(db: Db) {
       .where(
         and(
           eq(issues.companyId, finding.companyId),
-          eq(issues.originKind, "harness_liveness_escalation"),
+          eq(issues.originKind, RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation),
           eq(issues.originFingerprint, livenessRecoveryLeafFingerprint(finding)),
           isNull(issues.hiddenAt),
           notInArray(issues.status, ["done", "cancelled"]),
@@ -5450,7 +5448,7 @@ export function heartbeatService(db: Db) {
       .where(
         and(
           eq(issues.companyId, finding.companyId),
-          eq(issues.originKind, "harness_liveness_escalation"),
+          eq(issues.originKind, RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation),
           isNull(issues.hiddenAt),
           notInArray(issues.status, ["done", "cancelled"]),
         ),
@@ -5541,7 +5539,7 @@ export function heartbeatService(db: Db) {
       .from(issues)
       .where(
         and(
-          eq(issues.originKind, "harness_liveness_escalation"),
+          eq(issues.originKind, RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation),
           isNull(issues.hiddenAt),
           notInArray(issues.status, ["done", "cancelled"]),
         ),
@@ -5787,7 +5785,7 @@ export function heartbeatService(db: Db) {
         projectId: recoveryIssue.projectId,
         goalId: recoveryIssue.goalId,
         assigneeAgentId: ownerSelection.agentId,
-        originKind: "harness_liveness_escalation",
+        originKind: RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation,
         originId: input.finding.incidentKey,
         originFingerprint: livenessRecoveryLeafFingerprint(input.finding),
         billingCode: recoveryIssue.billingCode,
@@ -5879,7 +5877,7 @@ export function heartbeatService(db: Db) {
         issueId: escalation.id,
         taskId: escalation.id,
         wakeReason: "issue_assigned",
-        source: "harness_liveness_escalation",
+        source: RECOVERY_ORIGIN_KINDS.issueGraphLivenessEscalation,
         sourceIssueId: issue.id,
         recoveryIssueId: recoveryIssue.id,
         incidentKey: input.finding.incidentKey,
