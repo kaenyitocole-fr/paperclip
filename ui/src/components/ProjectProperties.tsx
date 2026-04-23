@@ -250,6 +250,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     queryFn: () => instanceSettingsApi.getExperimental(),
     retry: false,
   });
+  const environmentsEnabled = experimentalSettings?.enableEnvironments === true;
   const { data: availableSecrets = [] } = useQuery({
     queryKey: selectedCompanyId ? queryKeys.secrets.list(selectedCompanyId) : ["secrets", "none"],
     queryFn: () => secretsApi.list(selectedCompanyId!),
@@ -268,7 +269,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const { data: environments } = useQuery({
     queryKey: queryKeys.environments.list(selectedCompanyId!),
     queryFn: () => environmentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && environmentsEnabled,
   });
 
   const linkedGoalIds = project.goalIds.length > 0
@@ -996,32 +997,34 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                         <div className="text-xs text-muted-foreground">
                           Host-managed implementation: <span className="text-foreground">Git worktree</span>
                         </div>
-                        <div>
-                          <div className="mb-1 flex items-center gap-1.5">
-                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <span>Environment</span>
-                              <SaveIndicator state={fieldState("execution_workspace_environment")} />
-                            </label>
+                        {environmentsEnabled ? (
+                          <div>
+                            <div className="mb-1 flex items-center gap-1.5">
+                              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>Environment</span>
+                                <SaveIndicator state={fieldState("execution_workspace_environment")} />
+                              </label>
+                            </div>
+                            <select
+                              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                              value={executionWorkspaceEnvironmentId}
+                              onChange={(e) =>
+                                commitField(
+                                  "execution_workspace_environment",
+                                  updateExecutionWorkspacePolicy({
+                                    environmentId: e.target.value || null,
+                                  })!,
+                                )}
+                            >
+                              <option value="">No environment</option>
+                              {runSelectableEnvironments.map((environment) => (
+                                <option key={environment.id} value={environment.id}>
+                                  {environment.name} · {environment.driver}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                          <select
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
-                            value={executionWorkspaceEnvironmentId}
-                            onChange={(e) =>
-                              commitField(
-                                "execution_workspace_environment",
-                                updateExecutionWorkspacePolicy({
-                                  environmentId: e.target.value || null,
-                                })!,
-                              )}
-                          >
-                            <option value="">No environment</option>
-                            {runSelectableEnvironments.map((environment) => (
-                              <option key={environment.id} value={environment.id}>
-                                {environment.name} · {environment.driver}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        ) : null}
                         <div>
                           <div className="mb-1 flex items-center gap-1.5">
                             <label className="flex items-center gap-2 text-xs text-muted-foreground">
