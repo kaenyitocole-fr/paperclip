@@ -272,7 +272,7 @@ export async function ensureAdapterExecutionTargetFile(
   await runAdapterExecutionTargetShellCommand(
     runId,
     target,
-    `mkdir -p ${JSON.stringify(path.posix.dirname(filePath))} && : > ${JSON.stringify(filePath)}`,
+    `mkdir -p ${shellQuote(path.posix.dirname(filePath))} && : > ${shellQuote(filePath)}`,
     options,
   );
 }
