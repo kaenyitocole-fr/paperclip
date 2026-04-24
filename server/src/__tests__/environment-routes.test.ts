@@ -905,6 +905,41 @@ describe("environment routes", () => {
     );
   });
 
+  it("deletes the stored SSH private-key secret before removing the environment", async () => {
+    const environment = {
+      ...createEnvironment(),
+      name: "SSH Fixture",
+      driver: "ssh" as const,
+      config: {
+        host: "ssh.example.test",
+        port: 22,
+        username: "ssh-user",
+        remoteWorkspacePath: "/srv/paperclip/workspace",
+        privateKey: null,
+        privateKeySecretRef: {
+          type: "secret_ref",
+          secretId: "11111111-1111-4111-8111-111111111111",
+          version: "latest",
+        },
+        knownHosts: null,
+        strictHostKeyChecking: true,
+      },
+    };
+    mockEnvironmentService.getById.mockResolvedValue(environment);
+    mockEnvironmentService.remove.mockResolvedValue(environment);
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "local_implicit",
+    });
+
+    const res = await request(app).delete(`/api/environments/${environment.id}`);
+
+    expect(res.status).toBe(200);
+    expect(mockSecretService.remove).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
+    expect(mockEnvironmentService.remove).toHaveBeenCalledWith(environment.id);
+  });
+
   it("returns 404 when deleting a missing environment", async () => {
     mockEnvironmentService.getById.mockResolvedValue(null);
     const app = createApp({

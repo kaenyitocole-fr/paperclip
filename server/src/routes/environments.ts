@@ -13,9 +13,11 @@ import { accessService, agentService, environmentService, logActivity } from "..
 import {
   normalizeEnvironmentConfigForPersistence,
   normalizeEnvironmentConfigForProbe,
+  parseEnvironmentDriverConfig,
   type ParsedEnvironmentConfig,
 } from "../services/environment-config.js";
 import { probeEnvironment } from "../services/environment-probe.js";
+import { secretService } from "../services/secrets.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function environmentRoutes(db: Db) {
@@ -23,6 +25,7 @@ export function environmentRoutes(db: Db) {
   const agents = agentService(db);
   const access = accessService(db);
   const svc = environmentService(db);
+  const secrets = secretService(db);
 
   function parseObject(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value)
@@ -287,6 +290,15 @@ export function environmentRoutes(db: Db) {
       return;
     }
     await assertCanMutateEnvironments(req, existing.companyId);
+    if (existing.driver === "ssh") {
+      const parsed = parseEnvironmentDriverConfig(existing);
+      if (parsed.driver === "ssh") {
+        const secretId = parsed.config.privateKeySecretRef?.secretId;
+        if (secretId) {
+          await secrets.remove(secretId);
+        }
+      }
+    }
     const removed = await svc.remove(existing.id);
     if (!removed) {
       res.status(404).json({ error: "Environment not found" });
