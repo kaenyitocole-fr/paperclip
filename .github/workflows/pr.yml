@@ -24,16 +24,7 @@ jobs:
         if: github.head_ref != 'chore/refresh-lockfile'
         run: |
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
-          manifest_pattern='(^|/)package\.json$|^pnpm-workspace\.yaml$|^\.npmrc$|^pnpmfile\.(cjs|js|mjs)$'
-          lockfile_changed=0
-          manifest_changed=0
           if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
-            lockfile_changed=1
-          fi
-          if printf '%s\n' "$changed" | grep -Eq "$manifest_pattern"; then
-            manifest_changed=1
-          fi
-          if [ "$lockfile_changed" -eq 1 ] && [ "$manifest_changed" -eq 0 ]; then
             echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
             exit 1
           fi
