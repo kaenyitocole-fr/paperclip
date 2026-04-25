@@ -1,18 +1,26 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const packageDir = join(repoRoot, "packages", "plugins", "sandbox-providers", "paperclip-plugin-e2b");
+const packageDir = process.cwd();
 const packageJsonPath = join(packageDir, "package.json");
 const sdkPackageJsonPath = join(repoRoot, "packages", "plugins", "sdk", "package.json");
+
+if (!existsSync(packageJsonPath)) {
+  throw new Error(`No package.json found in plugin directory: ${packageDir}`);
+}
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const sdkPackageJson = JSON.parse(readFileSync(sdkPackageJsonPath, "utf8"));
 const publishConfig = packageJson.publishConfig ?? {};
+const dependencies = {
+  ...(packageJson.dependencies ?? {}),
+  "@paperclipai/plugin-sdk": sdkPackageJson.version,
+};
 
 const publishPackageJson = {
   name: packageJson.name,
@@ -30,12 +38,9 @@ const publishPackageJson = {
   files: packageJson.files,
   paperclipPlugin: packageJson.paperclipPlugin,
   keywords: packageJson.keywords,
-  dependencies: {
-    "@paperclipai/plugin-sdk": sdkPackageJson.version,
-    e2b: packageJson.dependencies.e2b,
-  },
+  dependencies,
 };
 
 writeFileSync(packageJsonPath, `${JSON.stringify(publishPackageJson, null, 2)}\n`);
 
-console.log("  ✓ Generated publishable E2B plugin package.json");
+console.log(`  ✓ Generated publishable plugin package.json for ${packageJson.name}`);
