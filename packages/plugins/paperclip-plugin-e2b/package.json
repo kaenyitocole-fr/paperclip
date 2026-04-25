@@ -1,19 +1,48 @@
 {
   "name": "@paperclipai/plugin-e2b",
   "version": "0.1.0",
-  "description": "First-party E2B sandbox provider plugin for Paperclip environments",
+  "description": "E2B sandbox provider plugin for Paperclip environments",
+  "license": "MIT",
+  "homepage": "https://github.com/paperclipai/paperclip",
+  "bugs": {
+    "url": "https://github.com/paperclipai/paperclip/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paperclipai/paperclip",
+    "directory": "packages/plugins/paperclip-plugin-e2b"
+  },
   "type": "module",
-  "private": true,
   "exports": {
     ".": "./src/index.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist"
+  ],
   "paperclipPlugin": {
     "manifest": "./dist/manifest.js",
     "worker": "./dist/worker.js"
   },
+  "keywords": [
+    "paperclip",
+    "plugin",
+    "sandbox",
+    "e2b"
+  ],
   "scripts": {
     "prebuild": "node ../../../scripts/ensure-plugin-build-deps.mjs",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "clean": "rm -rf dist",
     "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
