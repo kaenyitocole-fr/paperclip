@@ -144,29 +144,6 @@ describe("sandbox provider runtime", () => {
     ).toBe("sandbox-template-b");
   });
 
-  it("keeps matching legacy plugin leases that only stored provider-level metadata", () => {
-    expect(
-      findReusableSandboxProviderLeaseId({
-        config: {
-          provider: "secure-plugin",
-          template: "template-b",
-          apiKey: "22222222-2222-2222-2222-222222222222",
-          timeoutMs: 300000,
-          reuseLease: true,
-        },
-        leases: [
-          {
-            providerLeaseId: "sandbox-template-b-legacy",
-            metadata: {
-              provider: "secure-plugin",
-              reuseLease: true,
-            },
-          },
-        ],
-      }),
-    ).toBe("sandbox-template-b-legacy");
-  });
-
   it("reconstructs fake sandbox config from lease metadata for later release", () => {
     const metadata = {
       provider: "fake",

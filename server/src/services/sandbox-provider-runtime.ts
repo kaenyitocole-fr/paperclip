@@ -311,8 +311,6 @@ function metadataMatchesPluginSandboxConfig(
   for (const [key, value] of Object.entries(config)) {
     if (key === "provider" || key === "reuseLease") continue;
     if (value === undefined) continue;
-    // Older plugin-backed leases only persisted provider + reuseLease.
-    if (!Object.prototype.hasOwnProperty.call(metadata, key)) continue;
     if (JSON.stringify(metadata[key]) !== JSON.stringify(value)) {
       return false;
     }
