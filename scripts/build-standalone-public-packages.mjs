@@ -2,14 +2,19 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import path from "node:path";
+import path, { dirname } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = process.cwd();
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
 const workspacePath = path.join(repoRoot, "pnpm-workspace.yaml");
 const releasePackageMapPath = path.join(repoRoot, "scripts", "release-package-map.mjs");
 
 function parseWorkspaceEntries(workspaceText) {
+  // Keep this aligned with the repo's block-sequence `packages:` format in
+  // pnpm-workspace.yaml. If that file moves to a more complex YAML shape,
+  // switch this parser to a real YAML parser instead of line matching.
   return workspaceText
     .split("\n")
     .map((line) => line.match(/^\s*-\s+(.+)\s*$/)?.[1]?.trim() ?? null)
@@ -110,13 +115,23 @@ function main() {
     const pkgDir = path.join(repoRoot, pkg.dir);
     const pkgJson = readPackageJson(pkg.dir);
     const nodeModulesDir = path.join(pkgDir, "node_modules");
+    const packageLockfilePath = path.join(pkgDir, "pnpm-lock.yaml");
 
     console.log(`  Preparing standalone package ${pkg.name} (${pkg.dir})`);
     if (existsSync(nodeModulesDir)) {
       rmSync(nodeModulesDir, { force: true, recursive: true });
     }
 
-    run("pnpm", ["install", "--ignore-workspace", "--no-lockfile"], pkgDir);
+    const installArgs = existsSync(packageLockfilePath)
+      ? ["install", "--ignore-workspace", "--frozen-lockfile"]
+      : [
+        "install",
+        "--ignore-workspace",
+        "--no-lockfile",
+        // Standalone packages intentionally avoid committed lockfile churn in the repo.
+      ];
+
+    run("pnpm", installArgs, pkgDir);
 
     if (pkgJson.scripts?.build) {
       run("pnpm", ["run", "build"], pkgDir);
