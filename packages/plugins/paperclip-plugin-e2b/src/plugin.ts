@@ -104,7 +104,7 @@ function shellQuote(value: string) {
 }
 
 function buildCommandLine(command: string, args: string[] = []) {
-  return ["exec", command, ...args].map(shellQuote).join(" ");
+  return `exec ${[command, ...args].map(shellQuote).join(" ")}`;
 }
 
 const plugin = definePlugin({

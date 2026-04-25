@@ -219,7 +219,7 @@ describe("E2B sandbox provider plugin", () => {
     });
 
     expect(mockConnect).toHaveBeenCalledWith("sandbox-123", expect.objectContaining({ apiKey: "resolved-key" }));
-    expect(sandbox.commands.run).toHaveBeenCalledWith("'exec' 'printf' 'hello'", expect.objectContaining({
+    expect(sandbox.commands.run).toHaveBeenCalledWith("exec 'printf' 'hello'", expect.objectContaining({
       background: true,
       cwd: "/workspace",
       envs: { FOO: "bar" },
