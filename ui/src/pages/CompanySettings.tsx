@@ -20,6 +20,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
+import { CompanyAuthHealthCard } from "../components/CompanyAuthHealthCard";
 import { JsonSchemaForm, getDefaultValues, validateJsonSchemaForm } from "@/components/JsonSchemaForm";
 import {
   Field,
@@ -1219,6 +1220,16 @@ export function CompanySettings() {
           )}
         </div>
       </div>
+
+      {/* Authentication */}
+      {selectedCompanyId && (
+        <div className="space-y-4">
+          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Authentication
+          </div>
+          <CompanyAuthHealthCard companyId={selectedCompanyId} />
+        </div>
+      )}
 
       {/* Import / Export */}
       <div className="space-y-4">

@@ -21,6 +21,7 @@ import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { AuthModeBadge } from "../components/AuthModeBadge";
 
 const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
@@ -256,6 +257,7 @@ export function Agents() {
                       <span className="w-28 whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
                         {getAdapterLabel(agent.adapterType)}
                       </span>
+                      <AuthModeBadge agent={agent} />
                       <span className="text-xs text-muted-foreground w-16 text-right">
                         {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
                       </span>
@@ -359,6 +361,7 @@ function OrgTreeNode({
                 <span className="w-28 whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
                   {getAdapterLabel(agent.adapterType)}
                 </span>
+                <AuthModeBadge agent={agent} />
                 <span className="text-xs text-muted-foreground w-16 text-right">
                   {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
                 </span>

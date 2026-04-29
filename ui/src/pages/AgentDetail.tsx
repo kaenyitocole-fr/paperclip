@@ -31,6 +31,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
+import { AuthModeBadge } from "../components/AuthModeBadge";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
@@ -948,6 +949,7 @@ export function AgentDetail() {
             disabled={agentAction.isPending || isPendingApproval}
           />
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
+          <span className="hidden sm:inline"><AuthModeBadge agent={agent} /></span>
           {mobileLiveRun && (
             <Link
               to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
