@@ -9,6 +9,14 @@ interface LinkActor {
   userId?: string | null;
 }
 
+interface EnsurePendingGateInput {
+  issueId: string;
+  companyId: string;
+  type: "plan_approval" | "mockup_approval";
+  requestedByAgentId: string;
+  payload: Record<string, unknown>;
+}
+
 export function issueApprovalService(db: Db) {
   async function getIssue(issueId: string) {
     return db
@@ -130,6 +138,75 @@ export function issueApprovalService(db: Db) {
       await db
         .delete(issueApprovals)
         .where(and(eq(issueApprovals.issueId, issueId), eq(issueApprovals.approvalId, approvalId)));
+    },
+
+    ensurePendingGate: async (input: EnsurePendingGateInput) => {
+      const existing = await db
+        .select({ id: approvals.id })
+        .from(issueApprovals)
+        .innerJoin(approvals, eq(issueApprovals.approvalId, approvals.id))
+        .where(
+          and(
+            eq(issueApprovals.issueId, input.issueId),
+            eq(approvals.status, "pending"),
+            eq(approvals.type, input.type),
+          ),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        return { approval: null, created: false as const };
+      }
+      const created = await db
+        .insert(approvals)
+        .values({
+          companyId: input.companyId,
+          type: input.type,
+          status: "pending",
+          requestedByAgentId: input.requestedByAgentId,
+          payload: input.payload,
+        })
+        .returning()
+        .then((rows) => rows[0]);
+      await db
+        .insert(issueApprovals)
+        .values({
+          companyId: input.companyId,
+          issueId: input.issueId,
+          approvalId: created.id,
+          linkedByAgentId: input.requestedByAgentId,
+          linkedByUserId: null,
+        })
+        .onConflictDoNothing();
+      return { approval: created, created: true as const };
+    },
+
+    listIssuesWithPendingApprovals: async (issueIds: string[], types?: readonly string[]) => {
+      if (issueIds.length === 0) return new Map<string, string[]>();
+      const conditions = [
+        inArray(issueApprovals.issueId, issueIds),
+        eq(approvals.status, "pending"),
+      ];
+      if (types && types.length > 0) {
+        conditions.push(inArray(approvals.type, types as string[]));
+      }
+      const rows = await db
+        .select({
+          issueId: issueApprovals.issueId,
+          type: approvals.type,
+        })
+        .from(issueApprovals)
+        .innerJoin(approvals, eq(issueApprovals.approvalId, approvals.id))
+        .where(and(...conditions));
+      const map = new Map<string, string[]>();
+      for (const row of rows) {
+        const existing = map.get(row.issueId);
+        if (existing) {
+          existing.push(row.type);
+        } else {
+          map.set(row.issueId, [row.type]);
+        }
+      }
+      return map;
     },
 
     linkManyForApproval: async (approvalId: string, issueIds: string[], actor?: LinkActor) => {
