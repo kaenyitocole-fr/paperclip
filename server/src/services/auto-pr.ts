@@ -109,7 +109,6 @@ export async function runAutoPr(input: AutoPrInput, deps: AutoPrDeps = {}): Prom
       [
         "pr",
         "create",
-        "--draft",
         "--base",
         baseBranch,
         "--head",
