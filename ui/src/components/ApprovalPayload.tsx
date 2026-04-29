@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Image as ImageIcon,
   HelpCircle,
+  UserCheck,
 } from "lucide-react";
 import { formatCents } from "../lib/utils";
 
@@ -18,6 +19,7 @@ export const typeLabel: Record<string, string> = {
   plan_approval: "Plan Approval",
   mockup_approval: "Mockup Approval",
   clarification_request: "Clarification Request",
+  kaeny_approval: "Plan Sign-off",
 };
 
 function firstNonEmptyString(...values: unknown[]): string | null {
@@ -56,6 +58,7 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   plan_approval: ClipboardList,
   mockup_approval: ImageIcon,
   clarification_request: HelpCircle,
+  kaeny_approval: UserCheck,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -416,6 +419,71 @@ export function ClarificationRequestPayload({ payload }: { payload: Record<strin
   );
 }
 
+const KAENY_NOTES_COLLAPSE_THRESHOLD = 320;
+
+export function KaenyApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
+  const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
+  const issueTitle = firstNonEmptyString(payload.issueTitle);
+  const documentTitle = firstNonEmptyString(payload.documentTitle);
+  const planRevisionNumber =
+    typeof payload.planRevisionNumber === "number" ? payload.planRevisionNumber : null;
+  const complexity = firstNonEmptyString(payload.complexity);
+  const planReviewerNotes = firstNonEmptyString(payload.planReviewerNotes);
+  const hasUiSection = payload.hasUiSection === true;
+  const [expanded, setExpanded] = useState(false);
+  const isLong =
+    planReviewerNotes != null && planReviewerNotes.length > KAENY_NOTES_COLLAPSE_THRESHOLD;
+  const visibleNotes = planReviewerNotes
+    ? isLong && !expanded
+      ? `${planReviewerNotes.slice(0, KAENY_NOTES_COLLAPSE_THRESHOLD)}…`
+      : planReviewerNotes
+    : null;
+
+  return (
+    <div className="mt-3 space-y-2 text-sm">
+      {issueIdentifier && (
+        <PayloadField
+          label="Issue"
+          value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier}
+        />
+      )}
+      {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
+      {planRevisionNumber !== null && (
+        <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
+      )}
+      {complexity && <PayloadField label="Complexity" value={complexity} />}
+      <PayloadField label="Next agent" value={hasUiSection ? "mockup-designer" : "implementer"} />
+      {visibleNotes && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Plan reviewer notes
+          </p>
+          <blockquote className="rounded-lg border-l-2 border-border/80 bg-muted/40 px-3.5 py-2.5 text-sm text-foreground/90 whitespace-pre-wrap">
+            {visibleNotes}
+          </blockquote>
+          {isLong && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? "Show less" : "Show full notes"}
+            </button>
+          )}
+        </div>
+      )}
+      <p className="text-muted-foreground text-xs leading-5 mt-2">
+        Plan reviewer signed off on this {complexity ?? "medium-or-high"}-complexity plan. Approve
+        to hand off to{" "}
+        <span className="font-medium text-foreground">
+          {hasUiSection ? "mockup-designer" : "implementer"}
+        </span>
+        , or request changes to send it back to the planner with feedback.
+      </p>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -433,5 +501,6 @@ export function ApprovalPayloadRenderer({
   if (type === "plan_approval") return <PlanApprovalPayload payload={payload} />;
   if (type === "mockup_approval") return <MockupApprovalPayload payload={payload} />;
   if (type === "clarification_request") return <ClarificationRequestPayload payload={payload} />;
+  if (type === "kaeny_approval") return <KaenyApprovalPayload payload={payload} />;
   return <CeoStrategyPayload payload={payload} />;
 }

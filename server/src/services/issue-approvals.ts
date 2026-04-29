@@ -12,7 +12,7 @@ interface LinkActor {
 interface EnsurePendingGateInput {
   issueId: string;
   companyId: string;
-  type: "plan_approval" | "mockup_approval";
+  type: "plan_approval" | "mockup_approval" | "kaeny_approval";
   requestedByAgentId: string;
   payload: Record<string, unknown>;
 }

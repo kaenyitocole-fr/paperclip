@@ -57,6 +57,7 @@ import {
   workProductService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
+import { isKaenyApprovalEligible, parsePlanDocMarkers } from "../lib/plan-doc-markers.js";
 import { conflict, forbidden, HttpError, notFound, unauthorized } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
@@ -1320,6 +1321,51 @@ export function issueRoutes(
             source: "auto:issue.plan_document_upsert",
           },
         });
+      }
+
+      const planMarkers = parsePlanDocMarkers(req.body.body);
+      if (isKaenyApprovalEligible(planMarkers)) {
+        const kaenyGate = await issueApprovalsSvc.ensurePendingGate({
+          issueId: issue.id,
+          companyId: issue.companyId,
+          type: "kaeny_approval",
+          requestedByAgentId: actor.agentId,
+          payload: {
+            issueId: issue.id,
+            issueIdentifier: issue.identifier,
+            issueTitle: issue.title,
+            documentId: doc.id,
+            documentKey: doc.key,
+            documentTitle: doc.title,
+            planRevisionId: doc.latestRevisionId,
+            planRevisionNumber: doc.latestRevisionNumber,
+            complexity: planMarkers.complexity,
+            planReviewerNotes: planMarkers.planReviewerNotes,
+            hasUiSection: planMarkers.hasUiSection,
+            sourceAgentId: actor.agentId,
+          },
+        });
+        if (kaenyGate.created && kaenyGate.approval) {
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            action: "approval.created",
+            entityType: "approval",
+            entityId: kaenyGate.approval.id,
+            details: {
+              type: "kaeny_approval",
+              issueId: issue.id,
+              issueIdentifier: issue.identifier,
+              documentId: doc.id,
+              planRevisionId: doc.latestRevisionId,
+              complexity: planMarkers.complexity,
+              source: "auto:issue.plan_document_upsert",
+            },
+          });
+        }
       }
     }
 

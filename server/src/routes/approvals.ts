@@ -10,6 +10,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
+  agentService,
   approvalService,
   heartbeatService,
   issueApprovalService,
@@ -39,6 +40,7 @@ export function approvalRoutes(
   });
   const issueApprovalsSvc = issueApprovalService(db);
   const issuesSvc = issueService(db);
+  const agentsSvc = agentService(db);
   const secretsSvc = secretService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
@@ -72,6 +74,79 @@ export function approvalRoutes(
           { err, issueId, approvalId: args.approval.id },
           "failed to post clarification decision comment",
         );
+      }
+    }
+  }
+
+  async function findAgentByName(companyId: string, name: string) {
+    const allAgents = await agentsSvc.list(companyId);
+    const lowered = name.toLowerCase();
+    return (
+      allAgents.find((agent) => agent.name.toLowerCase() === lowered) ??
+      allAgents.find((agent) => agent.name.toLowerCase().startsWith(lowered)) ??
+      null
+    );
+  }
+
+  async function handleKaenyApprovalDecision(args: {
+    approval: { id: string; type: string; companyId: string; payload: Record<string, unknown> };
+    outcome: "approved" | "revision_requested" | "rejected";
+    decisionNote: string | null | undefined;
+    decidedByUserId: string;
+  }) {
+    if (args.approval.type !== "kaeny_approval") return;
+    const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(args.approval.id);
+    if (linkedIssues.length === 0) return;
+    const hasUiSection = args.approval.payload?.hasUiSection === true;
+    const targetName =
+      args.outcome === "approved"
+        ? hasUiSection
+          ? "mockup-designer"
+          : "implementer"
+        : args.outcome === "revision_requested"
+          ? "planner"
+          : null;
+    const targetAgent = targetName ? await findAgentByName(args.approval.companyId, targetName) : null;
+    const verb =
+      args.outcome === "approved"
+        ? "approved"
+        : args.outcome === "revision_requested"
+          ? "needs revision"
+          : "rejected";
+    const note = args.decisionNote?.trim();
+    const headerLine = `**Plan sign-off ${verb}**`;
+    const handoffLine = targetAgent
+      ? `Handing off to **${targetAgent.name}**.`
+      : targetName
+        ? `Wanted to hand off to **${targetName}** but no such agent exists in this company — leaving the assignee unchanged.`
+        : null;
+    const bodyParts = [headerLine];
+    if (handoffLine) bodyParts.push(handoffLine);
+    if (note) bodyParts.push(note);
+    const commentBody = bodyParts.join("\n\n");
+
+    for (const issue of linkedIssues) {
+      try {
+        await issuesSvc.addComment(issue.id, commentBody, { userId: args.decidedByUserId });
+      } catch (err) {
+        logger.warn(
+          { err, issueId: issue.id, approvalId: args.approval.id },
+          "failed to post kaeny_approval decision comment",
+        );
+      }
+      if (targetAgent && targetAgent.id !== issue.assigneeAgentId) {
+        try {
+          await issuesSvc.update(issue.id, {
+            assigneeAgentId: targetAgent.id,
+            assigneeUserId: null,
+            actorUserId: args.decidedByUserId,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, issueId: issue.id, approvalId: args.approval.id, targetAgentId: targetAgent.id },
+            "failed to reassign issue after kaeny_approval decision",
+          );
+        }
       }
     }
   }
@@ -192,6 +267,13 @@ export function approvalRoutes(
         linkedIssueIds,
       });
 
+      await handleKaenyApprovalDecision({
+        approval,
+        outcome: "approved",
+        decisionNote: req.body.decisionNote,
+        decidedByUserId,
+      });
+
       await logActivity(db, {
         companyId: approval.companyId,
         actorType: "user",
@@ -295,6 +377,13 @@ export function approvalRoutes(
         });
       }
 
+      await handleKaenyApprovalDecision({
+        approval,
+        outcome: "rejected",
+        decisionNote: req.body.decisionNote,
+        decidedByUserId,
+      });
+
       await logActivity(db, {
         companyId: approval.companyId,
         actorType: "user",
@@ -330,6 +419,13 @@ export function approvalRoutes(
         entityType: "approval",
         entityId: approval.id,
         details: { type: approval.type },
+      });
+
+      await handleKaenyApprovalDecision({
+        approval,
+        outcome: "revision_requested",
+        decisionNote: req.body.decisionNote,
+        decidedByUserId,
       });
 
       if (approval.type === "clarification_request") {
