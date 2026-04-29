@@ -1,4 +1,13 @@
-import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, ClipboardList, Image as ImageIcon } from "lucide-react";
+import { useState } from "react";
+import {
+  UserPlus,
+  Lightbulb,
+  ShieldAlert,
+  ShieldCheck,
+  ClipboardList,
+  Image as ImageIcon,
+  HelpCircle,
+} from "lucide-react";
 import { formatCents } from "../lib/utils";
 
 export const typeLabel: Record<string, string> = {
@@ -8,6 +17,7 @@ export const typeLabel: Record<string, string> = {
   request_board_approval: "Board Approval",
   plan_approval: "Plan Approval",
   mockup_approval: "Mockup Approval",
+  clarification_request: "Clarification Request",
 };
 
 function firstNonEmptyString(...values: unknown[]): string | null {
@@ -45,6 +55,7 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   request_board_approval: ShieldCheck,
   plan_approval: ClipboardList,
   mockup_approval: ImageIcon,
+  clarification_request: HelpCircle,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -295,6 +306,116 @@ export function MockupApprovalPayload({ payload }: { payload: Record<string, unk
   );
 }
 
+export interface ClarificationInterpretation {
+  label: string;
+  description: string;
+}
+
+export function readClarificationInterpretations(
+  payload: Record<string, unknown>,
+): ClarificationInterpretation[] {
+  const raw = payload.agentInterpretations;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): ClarificationInterpretation[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const label = firstNonEmptyString((entry as { label?: unknown }).label);
+    const description = firstNonEmptyString((entry as { description?: unknown }).description);
+    if (!label) return [];
+    return [{ label, description: description ?? "" }];
+  });
+}
+
+const QUOTED_COMMENT_COLLAPSE_THRESHOLD = 280;
+
+export function ClarificationRequestPayload({ payload }: { payload: Record<string, unknown> }) {
+  const agentName = firstNonEmptyString(payload.agentName) ?? "Agent";
+  const prUrl = firstNonEmptyString(payload.prUrl);
+  const commentUrl = firstNonEmptyString(payload.commentUrl);
+  const quotedComment = firstNonEmptyString(payload.quotedComment);
+  const prNumberMatch = prUrl?.match(/\/pull\/(\d+)/);
+  const prNumber = prNumberMatch ? prNumberMatch[1] : null;
+  const interpretations = readClarificationInterpretations(payload);
+  const [expanded, setExpanded] = useState(false);
+  const isLong = quotedComment != null && quotedComment.length > QUOTED_COMMENT_COLLAPSE_THRESHOLD;
+  const visibleQuote = quotedComment
+    ? isLong && !expanded
+      ? `${quotedComment.slice(0, QUOTED_COMMENT_COLLAPSE_THRESHOLD)}…`
+      : quotedComment
+    : null;
+
+  return (
+    <div className="mt-3 space-y-3 text-sm">
+      <p className="leading-6 text-foreground">
+        <span className="font-medium">{agentName}</span> needs clarification on{" "}
+        {prUrl ? (
+          <a
+            href={prUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            PR {prNumber ? `#${prNumber}` : prUrl}
+          </a>
+        ) : (
+          "a pull request"
+        )}
+        .
+      </p>
+      {visibleQuote && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Reviewer comment
+          </p>
+          <blockquote className="rounded-lg border-l-2 border-border/80 bg-muted/40 px-3.5 py-2.5 text-sm text-foreground/90 whitespace-pre-wrap">
+            {visibleQuote}
+          </blockquote>
+          {isLong && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? "Show less" : "Show full comment"}
+            </button>
+          )}
+          {commentUrl && (
+            <a
+              href={commentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-xs text-primary underline-offset-2 hover:underline"
+            >
+              View on GitHub
+            </a>
+          )}
+        </div>
+      )}
+      {interpretations.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Possible interpretations
+          </p>
+          <ul className="space-y-1.5">
+            {interpretations.map((interpretation, index) => (
+              <li
+                key={`${interpretation.label}-${index}`}
+                className="rounded-lg border border-border/60 bg-background/60 px-3.5 py-2.5"
+              >
+                <p className="font-medium text-foreground">{interpretation.label}</p>
+                {interpretation.description && (
+                  <p className="mt-0.5 text-sm text-muted-foreground leading-6">
+                    {interpretation.description}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -311,5 +432,6 @@ export function ApprovalPayloadRenderer({
   }
   if (type === "plan_approval") return <PlanApprovalPayload payload={payload} />;
   if (type === "mockup_approval") return <MockupApprovalPayload payload={payload} />;
+  if (type === "clarification_request") return <ClarificationRequestPayload payload={payload} />;
   return <CeoStrategyPayload payload={payload} />;
 }

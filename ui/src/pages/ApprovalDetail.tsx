@@ -8,7 +8,13 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
-import { approvalLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "../components/ApprovalPayload";
+import {
+  approvalLabel,
+  typeIcon,
+  defaultTypeIcon,
+  ApprovalPayloadRenderer,
+  readClarificationInterpretations,
+} from "../components/ApprovalPayload";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +32,10 @@ export function ApprovalDetail() {
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showRawPayload, setShowRawPayload] = useState(false);
+  const [clarificationSelection, setClarificationSelection] = useState<number | "custom" | null>(
+    null,
+  );
+  const [clarificationCustomText, setClarificationCustomText] = useState("");
 
   const { data: approval, isLoading } = useQuery({
     queryKey: queryKeys.approvals.detail(approvalId!),
@@ -85,7 +95,7 @@ export function ApprovalDetail() {
   };
 
   const approveMutation = useMutation({
-    mutationFn: () => approvalsApi.approve(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.approve(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -95,7 +105,7 @@ export function ApprovalDetail() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => approvalsApi.reject(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.reject(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -104,7 +114,7 @@ export function ApprovalDetail() {
   });
 
   const revisionMutation = useMutation({
-    mutationFn: () => approvalsApi.requestRevision(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.requestRevision(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -148,6 +158,24 @@ export function ApprovalDetail() {
   const linkedAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
   const isActionable = approval.status === "pending" || approval.status === "revision_requested";
   const isBudgetApproval = approval.type === "budget_override_required";
+  const isClarificationRequest = approval.type === "clarification_request";
+  const clarificationInterpretations = isClarificationRequest
+    ? readClarificationInterpretations(payload)
+    : [];
+  const clarificationDecisionNote = (() => {
+    if (!isClarificationRequest) return undefined;
+    if (clarificationSelection === "custom") {
+      const trimmed = clarificationCustomText.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (typeof clarificationSelection === "number") {
+      const choice = clarificationInterpretations[clarificationSelection];
+      if (!choice) return undefined;
+      return choice.description ? `${choice.label}: ${choice.description}` : choice.label;
+    }
+    return undefined;
+  })();
+  const clarificationDecisionReady = clarificationDecisionNote != null;
   const TypeIcon = typeIcon[approval.type] ?? defaultTypeIcon;
   const showApprovedBanner = searchParams.get("resolved") === "approved" && approval.status === "approved";
   const primaryLinkedIssue = linkedIssues?.[0] ?? null;
@@ -260,21 +288,77 @@ export function ApprovalDetail() {
             </p>
           </div>
         )}
+        {isClarificationRequest && isActionable && (
+          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Pick a response
+            </p>
+            <div className="space-y-2">
+              {clarificationInterpretations.map((interpretation, index) => (
+                <label
+                  key={`${interpretation.label}-${index}`}
+                  className="flex cursor-pointer items-start gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 hover:bg-accent/20"
+                >
+                  <input
+                    type="radio"
+                    name="clarification-selection"
+                    className="mt-1"
+                    checked={clarificationSelection === index}
+                    onChange={() => setClarificationSelection(index)}
+                  />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm font-medium text-foreground">
+                      {interpretation.label}
+                    </span>
+                    {interpretation.description && (
+                      <span className="block text-sm text-muted-foreground leading-6">
+                        {interpretation.description}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              ))}
+              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 hover:bg-accent/20">
+                <input
+                  type="radio"
+                  name="clarification-selection"
+                  className="mt-1"
+                  checked={clarificationSelection === "custom"}
+                  onChange={() => setClarificationSelection("custom")}
+                />
+                <span className="flex-1 space-y-1.5">
+                  <span className="block text-sm font-medium text-foreground">Type your own</span>
+                  {clarificationSelection === "custom" && (
+                    <Textarea
+                      value={clarificationCustomText}
+                      onChange={(e) => setClarificationCustomText(e.target.value)}
+                      placeholder="Tell the agent what you want them to do…"
+                      rows={3}
+                    />
+                  )}
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {isActionable && !isBudgetApproval && (
             <>
               <Button
                 size="sm"
                 className="bg-green-700 hover:bg-green-600 text-white"
-                onClick={() => approveMutation.mutate()}
-                disabled={approveMutation.isPending}
+                onClick={() => approveMutation.mutate(clarificationDecisionNote)}
+                disabled={
+                  approveMutation.isPending ||
+                  (isClarificationRequest && !clarificationDecisionReady)
+                }
               >
                 Approve
               </Button>
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => rejectMutation.mutate()}
+                onClick={() => rejectMutation.mutate(clarificationDecisionNote)}
                 disabled={rejectMutation.isPending}
               >
                 Reject
@@ -290,8 +374,11 @@ export function ApprovalDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => revisionMutation.mutate()}
-              disabled={revisionMutation.isPending}
+              onClick={() => revisionMutation.mutate(clarificationDecisionNote)}
+              disabled={
+                revisionMutation.isPending ||
+                (isClarificationRequest && !clarificationDecisionReady)
+              }
             >
               Request revision
             </Button>
