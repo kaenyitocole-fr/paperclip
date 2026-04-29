@@ -73,6 +73,7 @@ import {
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { executionWorkspaceService as executionWorkspaceServiceDirect } from "../services/execution-workspaces.js";
+import { runAutoPr } from "../services/auto-pr.js";
 import { feedbackService } from "../services/feedback.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { environmentService } from "../services/environments.js";
@@ -2621,6 +2622,26 @@ export function issueRoutes(
 
       const becameDone = existing.status !== "done" && issue.status === "done";
       if (becameDone) {
+        const workspace = issue.executionWorkspaceId
+          ? await executionWorkspacesSvc.getById(issue.executionWorkspaceId)
+          : null;
+        if (workspace?.cwd && workspace.branchName) {
+          const issueDeepLink = `${req.protocol}://${req.get("host")}/issues/${issue.identifier ?? issue.id}`;
+          void runAutoPr({
+            cwd: workspace.cwd,
+            branch: workspace.branchName,
+            issueTitle: issue.title,
+            issueIdentifier: issue.identifier,
+            issueDeepLink,
+          })
+            .then(async (result) => {
+              if (result.prUrl) {
+                await svc.setPrUrl(issue.id, result.prUrl);
+              }
+            })
+            .catch((err) => logger.warn({ err, issueId: issue.id }, "auto-pr: unhandled failure"));
+        }
+
         const dependents = await svc.listWakeableBlockedDependents(issue.id);
         for (const dependent of dependents) {
           addWakeup(dependent.assigneeAgentId, {
