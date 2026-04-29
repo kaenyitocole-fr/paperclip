@@ -34,6 +34,10 @@ type StartupBannerOptions = {
   databaseBackupIntervalMinutes: number;
   databaseBackupRetentionDays: number;
   databaseBackupDir: string;
+  localCheckoutSyncEnabled: boolean;
+  localCheckoutSyncPath: string | undefined;
+  localCheckoutSyncRemote: string;
+  localCheckoutSyncBranch: string;
 };
 
 const ansi = {
@@ -133,6 +137,10 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
   const dbBackup = opts.databaseBackupEnabled
     ? `enabled ${color(`(every ${opts.databaseBackupIntervalMinutes}m, keep ${opts.databaseBackupRetentionDays}d)`, "dim")}`
     : color("disabled", "yellow");
+  const checkoutSync =
+    opts.localCheckoutSyncEnabled && opts.localCheckoutSyncPath
+      ? `enabled ${color(`(${opts.localCheckoutSyncPath} ${opts.localCheckoutSyncRemote}/${opts.localCheckoutSyncBranch})`, "dim")}`
+      : color("disabled", "yellow");
 
   const art = [
     color("██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ", "cyan"),
@@ -165,6 +173,7 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     row("Heartbeat", heartbeat),
     row("DB Backup", dbBackup),
     row("Backup Dir", opts.databaseBackupDir),
+    row("Checkout Sync", checkoutSync),
     row("Config", configPath),
     agentJwtSecret.status === "warn"
       ? color("  ───────────────────────────────────────────────────────", "yellow")
