@@ -6,6 +6,8 @@ import { useCompany } from "../context/CompanyContext";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
+import { AuthModeBadge } from "./AuthModeBadge";
+import { getAnthropicApiKeyLast4, getClaudeAuthMode } from "../lib/claude-auth-mode";
 import { Identity } from "./Identity";
 import { formatDate, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -54,6 +56,17 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         <PropertyRow label="Adapter">
           <span className="text-sm font-mono">{getAdapterLabel(agent.adapterType)}</span>
         </PropertyRow>
+        {getClaudeAuthMode(agent) !== "n/a" && (
+          <PropertyRow label="Auth">
+            <AuthModeBadge agent={agent} />
+            {(() => {
+              const last4 = getAnthropicApiKeyLast4(agent);
+              return last4 ? (
+                <span className="text-xs text-muted-foreground font-mono">••••{last4}</span>
+              ) : null;
+            })()}
+          </PropertyRow>
+        )}
       </div>
 
       <Separator />
