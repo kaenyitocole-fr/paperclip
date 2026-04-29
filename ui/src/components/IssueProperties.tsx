@@ -1255,7 +1255,7 @@ export function IssueProperties({
         )}
       </div>
 
-      {liveWorkspaceService || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || issue.executionWorkspaceId ? (
+      {liveWorkspaceService || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || issue.executionWorkspaceId || issue.prUrl ? (
         <>
           <Separator />
           <div className="space-y-1">
@@ -1308,6 +1308,19 @@ export function IssueProperties({
                   value={issue.currentExecutionWorkspace.cwd}
                   icon={FolderOpen}
                 />
+              </PropertyRow>
+            )}
+            {issue.prUrl && (
+              <PropertyRow label="Pull request">
+                <a
+                  href={issue.prUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-w-0 items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  <span className="min-w-0 truncate">Open PR on GitHub</span>
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                </a>
               </PropertyRow>
             )}
           </div>

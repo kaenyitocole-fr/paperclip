@@ -1406,6 +1406,7 @@ const issueListSelect = {
   completedAt: issues.completedAt,
   cancelledAt: issues.cancelledAt,
   hiddenAt: issues.hiddenAt,
+  prUrl: issues.prUrl,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -3890,6 +3891,13 @@ export function issueService(db: Db) {
         project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
         goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
       }));
+    },
+
+    setPrUrl: async (id: string, prUrl: string | null) => {
+      await db
+        .update(issues)
+        .set({ prUrl, updatedAt: new Date() })
+        .where(eq(issues.id, id));
     },
   };
 }
