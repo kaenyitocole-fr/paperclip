@@ -310,10 +310,15 @@ export const APPROVAL_TYPES = [
   "request_board_approval",
   "plan_approval",
   "mockup_approval",
+  "clarification_request",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
-export const APPROVAL_GATE_TYPES = ["plan_approval", "mockup_approval"] as const satisfies readonly ApprovalType[];
+export const APPROVAL_GATE_TYPES = [
+  "plan_approval",
+  "mockup_approval",
+  "clarification_request",
+] as const satisfies readonly ApprovalType[];
 export type ApprovalGateType = (typeof APPROVAL_GATE_TYPES)[number];
 
 export const APPROVAL_STATUSES = [

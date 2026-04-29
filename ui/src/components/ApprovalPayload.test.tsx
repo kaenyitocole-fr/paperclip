@@ -85,4 +85,46 @@ describe("ApprovalPayloadRenderer", () => {
       root.unmount();
     });
   });
+
+  it("renders clarification_request payload with PR header, quote, and interpretations", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ApprovalPayloadRenderer
+          type="clarification_request"
+          payload={{
+            agentName: "pr-watcher",
+            prUrl: "https://github.com/paperclipai/paperclip/pull/4710",
+            commentUrl:
+              "https://github.com/paperclipai/paperclip/pull/4710#discussion_r1234567890",
+            quotedComment: "this seems off",
+            agentInterpretations: [
+              {
+                label: "Rename the variable",
+                description: "Rename `foo` to `fooCount` for clarity.",
+              },
+              {
+                label: "Add a comment",
+                description: "Document the why instead of renaming.",
+              },
+            ],
+            issueId: "11111111-1111-1111-1111-111111111111",
+          }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("pr-watcher");
+    expect(container.textContent).toContain("PR #4710");
+    expect(container.textContent).toContain("this seems off");
+    expect(container.textContent).toContain("Rename the variable");
+    expect(container.textContent).toContain("Rename `foo` to `fooCount` for clarity.");
+    expect(container.textContent).toContain("Add a comment");
+    expect(container.textContent).toContain("View on GitHub");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });
