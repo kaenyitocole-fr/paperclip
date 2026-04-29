@@ -38,6 +38,7 @@ import {
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { tickLocalCheckoutSync } from "./services/local-checkout-sync.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -779,6 +780,24 @@ export async function startServer(): Promise<StartedServer> {
         .catch((err) => {
           logger.error({ err }, "periodic heartbeat recovery failed");
         });
+
+      void tickLocalCheckoutSync({
+        enabled: config.localCheckoutSyncEnabled,
+        path: config.localCheckoutSyncPath,
+        remote: config.localCheckoutSyncRemote,
+        branch: config.localCheckoutSyncBranch,
+      })
+        .then((result) => {
+          if (result.outcome === "fast_forwarded") {
+            logger.info(
+              { fromSha: result.fromSha, toSha: result.toSha },
+              "local checkout fast-forwarded",
+            );
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "local checkout sync tick failed");
+        });
     }, config.heartbeatSchedulerIntervalMs);
   }
   
@@ -845,6 +864,10 @@ export async function startServer(): Promise<StartedServer> {
         databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
         databaseBackupRetentionDays: config.databaseBackupRetentionDays,
         databaseBackupDir: config.databaseBackupDir,
+        localCheckoutSyncEnabled: config.localCheckoutSyncEnabled,
+        localCheckoutSyncPath: config.localCheckoutSyncPath,
+        localCheckoutSyncRemote: config.localCheckoutSyncRemote,
+        localCheckoutSyncBranch: config.localCheckoutSyncBranch,
       });
 
       const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);

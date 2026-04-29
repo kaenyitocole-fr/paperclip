@@ -85,6 +85,10 @@ export interface Config {
   feedbackExportBackendToken: string | undefined;
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
+  localCheckoutSyncEnabled: boolean;
+  localCheckoutSyncPath: string | undefined;
+  localCheckoutSyncRemote: string;
+  localCheckoutSyncBranch: string;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
 }
@@ -331,6 +335,12 @@ export function loadConfig(): Config {
     feedbackExportBackendToken,
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
+    localCheckoutSyncEnabled: process.env.PAPERCLIP_LOCAL_CHECKOUT_SYNC_ENABLED === "true",
+    localCheckoutSyncPath: process.env.PAPERCLIP_LOCAL_CHECKOUT_SYNC_PATH?.trim()
+      ? resolveHomeAwarePath(process.env.PAPERCLIP_LOCAL_CHECKOUT_SYNC_PATH.trim())
+      : undefined,
+    localCheckoutSyncRemote: process.env.PAPERCLIP_LOCAL_CHECKOUT_SYNC_REMOTE?.trim() || "fork",
+    localCheckoutSyncBranch: process.env.PAPERCLIP_LOCAL_CHECKOUT_SYNC_BRANCH?.trim() || "master",
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
   };
