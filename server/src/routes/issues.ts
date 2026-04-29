@@ -1283,6 +1283,45 @@ export function issueRoutes(
     const referenceSummaryAfter = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
     const referenceDiff = issueReferencesSvc.diffIssueReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
 
+    if (doc.key === "plan" && actor.agentId) {
+      const gateResult = await issueApprovalsSvc.ensurePendingGate({
+        issueId: issue.id,
+        companyId: issue.companyId,
+        type: "plan_approval",
+        requestedByAgentId: actor.agentId,
+        payload: {
+          issueId: issue.id,
+          issueIdentifier: issue.identifier,
+          issueTitle: issue.title,
+          documentId: doc.id,
+          documentKey: doc.key,
+          documentTitle: doc.title,
+          planRevisionId: doc.latestRevisionId,
+          planRevisionNumber: doc.latestRevisionNumber,
+        },
+      });
+      if (gateResult.created && gateResult.approval) {
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "approval.created",
+          entityType: "approval",
+          entityId: gateResult.approval.id,
+          details: {
+            type: "plan_approval",
+            issueId: issue.id,
+            issueIdentifier: issue.identifier,
+            documentId: doc.id,
+            planRevisionId: doc.latestRevisionId,
+            source: "auto:issue.plan_document_upsert",
+          },
+        });
+      }
+    }
+
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,

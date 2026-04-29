@@ -123,7 +123,9 @@ function registerRouteMocks() {
       })),
       listCompanyIds: vi.fn(async () => [companyId]),
     }),
-    issueApprovalService: () => ({}),
+    issueApprovalService: () => ({
+      ensurePendingGate: vi.fn(async () => ({ approval: null, created: false })),
+    }),
     issueReferenceService: () => ({
       deleteDocumentSource: async () => undefined,
       diffIssueReferenceSummary: () => ({

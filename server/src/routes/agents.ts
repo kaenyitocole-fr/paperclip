@@ -8,6 +8,7 @@ import {
   agentSkillSyncSchema,
   agentMineInboxQuerySchema,
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+  APPROVAL_GATE_TYPES,
   createAgentKeySchema,
   createAgentHireSchema,
   createAgentSchema,
@@ -1279,27 +1280,30 @@ export function agentRoutes(
       includeRoutineExecutions: true,
       limit: ISSUE_LIST_DEFAULT_LIMIT,
     });
-    const dependencyReadiness = await issuesSvc.listDependencyReadiness(
-      req.actor.companyId,
-      rows.map((issue) => issue.id),
-    );
+    const issueIds = rows.map((issue) => issue.id);
+    const [dependencyReadiness, pendingGatesByIssue] = await Promise.all([
+      issuesSvc.listDependencyReadiness(req.actor.companyId, issueIds),
+      issueApprovalsSvc.listIssuesWithPendingApprovals(issueIds, APPROVAL_GATE_TYPES),
+    ]);
 
     res.json(
-      rows.map((issue) => ({
-        id: issue.id,
-        identifier: issue.identifier,
-        title: issue.title,
-        status: issue.status,
-        priority: issue.priority,
-        projectId: issue.projectId,
-        goalId: issue.goalId,
-        parentId: issue.parentId,
-        updatedAt: issue.updatedAt,
-        activeRun: issue.activeRun,
-        dependencyReady: dependencyReadiness.get(issue.id)?.isDependencyReady ?? true,
-        unresolvedBlockerCount: dependencyReadiness.get(issue.id)?.unresolvedBlockerCount ?? 0,
-        unresolvedBlockerIssueIds: dependencyReadiness.get(issue.id)?.unresolvedBlockerIssueIds ?? [],
-      })),
+      rows
+        .filter((issue) => !pendingGatesByIssue.has(issue.id))
+        .map((issue) => ({
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          status: issue.status,
+          priority: issue.priority,
+          projectId: issue.projectId,
+          goalId: issue.goalId,
+          parentId: issue.parentId,
+          updatedAt: issue.updatedAt,
+          activeRun: issue.activeRun,
+          dependencyReady: dependencyReadiness.get(issue.id)?.isDependencyReady ?? true,
+          unresolvedBlockerCount: dependencyReadiness.get(issue.id)?.unresolvedBlockerCount ?? 0,
+          unresolvedBlockerIssueIds: dependencyReadiness.get(issue.id)?.unresolvedBlockerIssueIds ?? [],
+        })),
     );
   });
 

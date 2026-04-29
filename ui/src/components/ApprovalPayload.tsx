@@ -1,4 +1,4 @@
-import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck } from "lucide-react";
+import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, ClipboardList, Image as ImageIcon } from "lucide-react";
 import { formatCents } from "../lib/utils";
 
 export const typeLabel: Record<string, string> = {
@@ -6,6 +6,8 @@ export const typeLabel: Record<string, string> = {
   approve_ceo_strategy: "CEO Strategy",
   budget_override_required: "Budget Override",
   request_board_approval: "Board Approval",
+  plan_approval: "Plan Approval",
+  mockup_approval: "Mockup Approval",
 };
 
 function firstNonEmptyString(...values: unknown[]): string | null {
@@ -41,6 +43,8 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   approve_ceo_strategy: Lightbulb,
   budget_override_required: ShieldAlert,
   request_board_approval: ShieldCheck,
+  plan_approval: ClipboardList,
+  mockup_approval: ImageIcon,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -229,6 +233,68 @@ function BoardApprovalPayloadContent({ payload }: { payload: Record<string, unkn
   );
 }
 
+export function PlanApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
+  const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
+  const issueTitle = firstNonEmptyString(payload.issueTitle);
+  const documentTitle = firstNonEmptyString(payload.documentTitle);
+  const planRevisionNumber =
+    typeof payload.planRevisionNumber === "number" ? payload.planRevisionNumber : null;
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      {issueIdentifier && (
+        <PayloadField label="Issue" value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier} />
+      )}
+      {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
+      {planRevisionNumber !== null && (
+        <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
+      )}
+      <p className="text-muted-foreground text-xs leading-5 mt-2">
+        The agent paused after writing this plan. Approve to resume implementation, or request changes
+        with feedback to send the agent back to revise.
+      </p>
+    </div>
+  );
+}
+
+export function MockupApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
+  const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
+  const issueTitle = firstNonEmptyString(payload.issueTitle);
+  const mockupUrl = firstNonEmptyString(payload.mockupUrl, payload.url);
+  const mockupPath = firstNonEmptyString(payload.mockupPath, payload.path);
+  const summary = firstNonEmptyString(payload.summary);
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      {issueIdentifier && (
+        <PayloadField label="Issue" value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier} />
+      )}
+      {mockupUrl ? (
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs">Mockup</span>
+          <a
+            href={mockupUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline truncate"
+          >
+            {mockupUrl}
+          </a>
+        </div>
+      ) : (
+        mockupPath && <PayloadField label="Mockup" value={mockupPath} />
+      )}
+      {summary && (
+        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
+          {summary}
+        </div>
+      )}
+      <p className="text-muted-foreground text-xs leading-5 mt-2">
+        The agent paused after producing this mockup. Approve to resume implementation, or request
+        changes with feedback to send the agent back to revise.
+      </p>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -243,5 +309,7 @@ export function ApprovalPayloadRenderer({
   if (type === "request_board_approval") {
     return <BoardApprovalPayload payload={payload} hideTitle={hidePrimaryTitle} />;
   }
+  if (type === "plan_approval") return <PlanApprovalPayload payload={payload} />;
+  if (type === "mockup_approval") return <MockupApprovalPayload payload={payload} />;
   return <CeoStrategyPayload payload={payload} />;
 }
