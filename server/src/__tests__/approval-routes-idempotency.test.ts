@@ -25,6 +25,11 @@ const mockIssueApprovalService = vi.hoisted(() => ({
 
 const mockIssueService = vi.hoisted(() => ({
   addComment: vi.fn(),
+  update: vi.fn(),
+}));
+
+const mockAgentService = vi.hoisted(() => ({
+  list: vi.fn(async () => []),
 }));
 
 const mockSecretService = vi.hoisted(() => ({
@@ -35,6 +40,7 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
+    agentService: () => mockAgentService,
     approvalService: () => mockApprovalService,
     heartbeatService: () => mockHeartbeatService,
     issueApprovalService: () => mockIssueApprovalService,

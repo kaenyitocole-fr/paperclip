@@ -278,6 +278,53 @@ describe("plan document upsert auto-creates plan_approval gate", () => {
     expect(mockIssueApprovalService.ensurePendingGate).not.toHaveBeenCalled();
   });
 
+  it("creates a kaeny_approval when plan body has approved review and medium complexity", async () => {
+    const body =
+      "# Plan\n\n## complexity\nmedium\n\n## plan review\nStatus: approved\n\nLooks good.";
+    const app = await createApp();
+    const res = await request(app)
+      .put(`/api/issues/${issueId}/documents/plan`)
+      .send({ title: "Plan", format: "markdown", body });
+
+    expect(res.status).toBe(201);
+    const calls = mockIssueApprovalService.ensurePendingGate.mock.calls;
+    const kaenyCall = calls.find(([input]) => input.type === "kaeny_approval");
+    expect(kaenyCall).toBeDefined();
+    expect(kaenyCall![0].payload).toMatchObject({
+      issueId,
+      issueIdentifier: "TST-1",
+      complexity: "medium",
+      planReviewerNotes: "Looks good.",
+      hasUiSection: false,
+    });
+  });
+
+  it("does not create a kaeny_approval for low complexity plans", async () => {
+    const body =
+      "# Plan\n\n## complexity\nlow\n\n## plan review\nStatus: approved";
+    const app = await createApp();
+    const res = await request(app)
+      .put(`/api/issues/${issueId}/documents/plan`)
+      .send({ title: "Plan", format: "markdown", body });
+
+    expect(res.status).toBe(201);
+    const calls = mockIssueApprovalService.ensurePendingGate.mock.calls;
+    expect(calls.find(([input]) => input.type === "kaeny_approval")).toBeUndefined();
+  });
+
+  it("does not create a kaeny_approval when plan review is not approved", async () => {
+    const body =
+      "# Plan\n\n## complexity\nhigh\n\n## plan review\nStatus: changes-requested";
+    const app = await createApp();
+    const res = await request(app)
+      .put(`/api/issues/${issueId}/documents/plan`)
+      .send({ title: "Plan", format: "markdown", body });
+
+    expect(res.status).toBe(201);
+    const calls = mockIssueApprovalService.ensurePendingGate.mock.calls;
+    expect(calls.find(([input]) => input.type === "kaeny_approval")).toBeUndefined();
+  });
+
   it("does not auto-create for non-plan document keys", async () => {
     mockDocumentService.upsertIssueDocument.mockResolvedValue({
       created: true,
