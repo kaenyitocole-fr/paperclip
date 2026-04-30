@@ -82,6 +82,7 @@ export async function runAutoPr(input: AutoPrInput, deps: AutoPrDeps = {}): Prom
 
   const remote = remotes.includes("fork") ? "fork" : (remotes.includes("origin") ? "origin" : remotes[0]!);
   const baseBranch = await detectBaseBranch(git, remote);
+  const repoSlug = await detectRepoSlug(git, remote);
 
   const ahead = await countCommitsAhead(git, remote, input.branch, baseBranch);
   if (ahead === 0) return skip("no_unpushed_commits", log, { remote, baseBranch });
@@ -96,7 +97,7 @@ export async function runAutoPr(input: AutoPrInput, deps: AutoPrDeps = {}): Prom
   const ghOnPath = await commandExists(exec, "gh");
   if (!ghOnPath) return skip("gh_not_installed", log);
 
-  const existingPr = await findOpenPrUrl(exec, input.cwd, input.branch);
+  const existingPr = await findOpenPrUrl(exec, input.cwd, input.branch, repoSlug);
   if (existingPr) {
     log.info({ prUrl: existingPr }, "auto-pr: open PR already exists for branch");
     return { prUrl: existingPr, reason: "already_open" };
@@ -104,22 +105,20 @@ export async function runAutoPr(input: AutoPrInput, deps: AutoPrDeps = {}): Prom
 
   const body = buildPrBody(input.issueDeepLink, input.issueIdentifier);
   try {
-    const result = await exec(
-      "gh",
-      [
-        "pr",
-        "create",
-        "--base",
-        baseBranch,
-        "--head",
-        input.branch,
-        "--title",
-        input.issueTitle,
-        "--body",
-        body,
-      ],
-      { cwd: input.cwd },
-    );
+    const createArgs = [
+      "pr",
+      "create",
+      "--base",
+      baseBranch,
+      "--head",
+      input.branch,
+      "--title",
+      input.issueTitle,
+      "--body",
+      body,
+    ];
+    if (repoSlug) createArgs.push("--repo", repoSlug);
+    const result = await exec("gh", createArgs, { cwd: input.cwd });
     const prUrl = extractPrUrl(result.stdout);
     if (!prUrl) {
       log.warn({ stdout: result.stdout }, "auto-pr: gh pr create returned no URL");
@@ -183,18 +182,39 @@ async function commandExists(exec: ExecRunner, name: string): Promise<boolean> {
   }
 }
 
-async function findOpenPrUrl(exec: ExecRunner, cwd: string, branch: string): Promise<string | null> {
+async function findOpenPrUrl(
+  exec: ExecRunner,
+  cwd: string,
+  branch: string,
+  repoSlug: string | null,
+): Promise<string | null> {
   try {
-    const result = await exec(
-      "gh",
-      ["pr", "list", "--head", branch, "--state", "open", "--json", "url", "--limit", "1"],
-      { cwd },
-    );
+    const args = ["pr", "list", "--head", branch, "--state", "open", "--json", "url", "--limit", "1"];
+    if (repoSlug) args.push("--repo", repoSlug);
+    const result = await exec("gh", args, { cwd });
     const parsed = JSON.parse(result.stdout || "[]") as Array<{ url?: string }>;
     return parsed[0]?.url ?? null;
   } catch {
     return null;
   }
+}
+
+async function detectRepoSlug(
+  git: (args: string[]) => Promise<{ stdout: string; stderr: string }>,
+  remote: string,
+): Promise<string | null> {
+  const url = (await safeRun(() => git(["remote", "get-url", remote]), "")).trim();
+  if (!url) return null;
+  return parseRepoSlug(url);
+}
+
+export function parseRepoSlug(url: string): string | null {
+  const trimmed = url.trim().replace(/\.git$/, "");
+  const sshMatch = trimmed.match(/^[^@\s]+@[^:]+:([^/]+)\/(.+)$/);
+  if (sshMatch) return `${sshMatch[1]}/${sshMatch[2]}`;
+  const httpMatch = trimmed.match(/^https?:\/\/[^/]+\/([^/]+)\/(.+)$/);
+  if (httpMatch) return `${httpMatch[1]}/${httpMatch[2]}`;
+  return null;
 }
 
 function extractPrUrl(stdout: string): string | null {
