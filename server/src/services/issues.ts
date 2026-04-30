@@ -148,7 +148,10 @@ type IssueUserContextInput = {
   assigneeUserId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  status?: string | null;
 };
+
+const TERMINAL_ISSUE_STATUSES_FOR_UNREAD = new Set(["done", "cancelled"]);
 type ProjectGoalReader = Pick<Db, "select">;
 type DbReader = Pick<Db, "select">;
 type IssueCreateInput = Omit<typeof issues.$inferInsert, "companyId"> & {
@@ -513,6 +516,7 @@ function unreadForUserCondition(companyId: string, userId: string) {
   return sql<boolean>`
     (
       ${touchedCondition}
+      AND ${issues.status} NOT IN ('done', 'cancelled')
       AND EXISTS (
         SELECT 1
         FROM ${issueComments}
@@ -604,7 +608,9 @@ export function deriveIssueUserContext(
     .filter((value): value is Date => value instanceof Date)
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   const lastExternalCommentAt = normalizeDate(stats?.lastExternalCommentAt);
-  const isUnreadForMe = Boolean(
+  const isTerminal =
+    typeof issue.status === "string" && TERMINAL_ISSUE_STATUSES_FOR_UNREAD.has(issue.status);
+  const isUnreadForMe = !isTerminal && Boolean(
     myLastTouchAt &&
     lastExternalCommentAt &&
     lastExternalCommentAt.getTime() > myLastTouchAt.getTime(),

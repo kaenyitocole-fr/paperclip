@@ -6,12 +6,14 @@ function makeIssue(overrides?: Partial<{
   assigneeUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  status: string | null;
 }>) {
   return {
     createdByUserId: null,
     assigneeUserId: null,
     createdAt: new Date("2026-03-06T10:00:00.000Z"),
     updatedAt: new Date("2026-03-06T11:00:00.000Z"),
+    status: "in_progress",
     ...overrides,
   };
 }
@@ -91,6 +93,23 @@ describe("deriveIssueUserContext", () => {
     expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T11:30:00.000Z");
     expect(context.isUnreadForMe).toBe(false);
   });
+
+  it.each<string>(["done", "cancelled"])(
+    "marks terminal-status (%s) issues as read regardless of comment activity",
+    (terminalStatus) => {
+      const context = deriveIssueUserContext(
+        makeIssue({ createdByUserId: "user-1", status: terminalStatus }),
+        "user-1",
+        {
+          myLastCommentAt: new Date("2026-03-06T12:00:00.000Z"),
+          myLastReadAt: null,
+          lastExternalCommentAt: new Date("2026-03-06T13:00:00.000Z"),
+        },
+      );
+
+      expect(context.isUnreadForMe).toBe(false);
+    },
+  );
 
   it("handles SQL timestamp strings without throwing", () => {
     const context = deriveIssueUserContext(

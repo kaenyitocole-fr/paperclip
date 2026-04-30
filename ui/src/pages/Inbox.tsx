@@ -2325,6 +2325,9 @@ export function Inbox() {
                     if (item.kind === "approval") {
                       const approvalKey = `approval:${item.approval.id}`;
                       const isArchiving = archivingNonIssueIds.has(approvalKey);
+                      const approvalUnread = ACTIONABLE_APPROVAL_STATUSES.has(item.approval.status)
+                        ? nonIssueUnreadState(approvalKey)
+                        : null;
                       const row = (
                         <ApprovalInboxRow
                           key={approvalKey}
@@ -2334,7 +2337,7 @@ export function Inbox() {
                           onApprove={() => approveMutation.mutate(item.approval.id)}
                           onReject={() => rejectMutation.mutate(item.approval.id)}
                           isPending={approveMutation.isPending || rejectMutation.isPending}
-                          unreadState={nonIssueUnreadState(approvalKey)}
+                          unreadState={approvalUnread}
                           onMarkRead={() => handleMarkNonIssueRead(approvalKey)}
                           onArchive={canArchiveFromTab ? () => handleArchiveNonIssue(approvalKey) : undefined}
                           archiveDisabled={isArchiving}
