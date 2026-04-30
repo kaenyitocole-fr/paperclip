@@ -12,6 +12,9 @@ import { Tabs } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { RejectFeedbackDialog } from "../components/RejectFeedbackDialog";
+import { approvalSubject } from "../components/ApprovalPayload";
+import type { Approval } from "@paperclipai/shared";
 
 type StatusFilter = "pending" | "all";
 
@@ -24,6 +27,7 @@ export function Approvals() {
   const pathSegment = location.pathname.split("/").pop() ?? "pending";
   const statusFilter: StatusFilter = pathSegment === "all" ? "all" : "pending";
   const [actionError, setActionError] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<Approval | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Approvals" }]);
@@ -54,9 +58,11 @@ export function Approvals() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => approvalsApi.reject(id),
+    mutationFn: (variables: { id: string; decisionNote: string | undefined }) =>
+      approvalsApi.reject(variables.id, variables.decisionNote),
     onSuccess: () => {
       setActionError(null);
+      setRejectTarget(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
     },
     onError: (err) => {
@@ -120,16 +126,40 @@ export function Approvals() {
               approval={approval}
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
-              onReject={() => rejectMutation.mutate(approval.id)}
+              onReject={() => setRejectTarget(approval)}
               detailLink={`/approvals/${approval.id}`}
-              isPending={approveMutation.isPending || rejectMutation.isPending}
+              isPending={
+                approveMutation.isPending ||
+                (rejectMutation.isPending && rejectMutation.variables?.id === approval.id)
+              }
               pendingAction={
-                approveMutation.isPending ? "approve" : rejectMutation.isPending ? "reject" : null
+                approveMutation.isPending
+                  ? "approve"
+                  : rejectMutation.isPending && rejectMutation.variables?.id === approval.id
+                    ? "reject"
+                    : null
               }
             />
           ))}
         </div>
       )}
+
+      <RejectFeedbackDialog
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRejectTarget(null);
+        }}
+        subject={
+          rejectTarget
+            ? approvalSubject(rejectTarget.payload as Record<string, unknown> | null)
+            : null
+        }
+        isPending={rejectMutation.isPending}
+        onSubmit={(decisionNote) => {
+          if (!rejectTarget) return;
+          rejectMutation.mutate({ id: rejectTarget.id, decisionNote });
+        }}
+      />
     </div>
   );
 }

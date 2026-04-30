@@ -10,6 +10,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatCents } from "../lib/utils";
+import { PlanDocumentPreview } from "./PlanDocumentPreview";
 
 export const typeLabel: Record<string, string> = {
   hire_agent: "Hire Agent",
@@ -248,21 +249,35 @@ function BoardApprovalPayloadContent({ payload }: { payload: Record<string, unkn
 }
 
 export function PlanApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
+  const issueId = firstNonEmptyString(payload.issueId);
   const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
   const issueTitle = firstNonEmptyString(payload.issueTitle);
+  const documentKey = firstNonEmptyString(payload.documentKey) ?? "plan";
   const documentTitle = firstNonEmptyString(payload.documentTitle);
   const planRevisionNumber =
     typeof payload.planRevisionNumber === "number" ? payload.planRevisionNumber : null;
   return (
-    <div className="mt-3 space-y-1.5 text-sm">
-      {issueIdentifier && (
-        <PayloadField label="Issue" value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier} />
+    <div className="mt-3 space-y-3 text-sm">
+      <div className="space-y-1.5">
+        {issueIdentifier && (
+          <PayloadField
+            label="Issue"
+            value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier}
+          />
+        )}
+        {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
+        {planRevisionNumber !== null && (
+          <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
+        )}
+      </div>
+      {issueId && (
+        <PlanDocumentPreview
+          issueId={issueId}
+          issueIdentifier={issueIdentifier}
+          documentKey={documentKey}
+        />
       )}
-      {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
-      {planRevisionNumber !== null && (
-        <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
-      )}
-      <p className="text-muted-foreground text-xs leading-5 mt-2">
+      <p className="text-muted-foreground text-xs leading-5">
         The agent paused after writing this plan. Approve to resume implementation, or request changes
         with feedback to send the agent back to revise.
       </p>
@@ -422,8 +437,10 @@ export function ClarificationRequestPayload({ payload }: { payload: Record<strin
 const KAENY_NOTES_COLLAPSE_THRESHOLD = 320;
 
 export function KaenyApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
+  const issueId = firstNonEmptyString(payload.issueId);
   const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
   const issueTitle = firstNonEmptyString(payload.issueTitle);
+  const documentKey = firstNonEmptyString(payload.documentKey) ?? "plan";
   const documentTitle = firstNonEmptyString(payload.documentTitle);
   const planRevisionNumber =
     typeof payload.planRevisionNumber === "number" ? payload.planRevisionNumber : null;
@@ -440,19 +457,28 @@ export function KaenyApprovalPayload({ payload }: { payload: Record<string, unkn
     : null;
 
   return (
-    <div className="mt-3 space-y-2 text-sm">
-      {issueIdentifier && (
-        <PayloadField
-          label="Issue"
-          value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier}
+    <div className="mt-3 space-y-3 text-sm">
+      <div className="space-y-1.5">
+        {issueIdentifier && (
+          <PayloadField
+            label="Issue"
+            value={issueTitle ? `${issueIdentifier} · ${issueTitle}` : issueIdentifier}
+          />
+        )}
+        {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
+        {planRevisionNumber !== null && (
+          <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
+        )}
+        {complexity && <PayloadField label="Complexity" value={complexity} />}
+        <PayloadField label="Next agent" value={hasUiSection ? "mockup-designer" : "implementer"} />
+      </div>
+      {issueId && (
+        <PlanDocumentPreview
+          issueId={issueId}
+          issueIdentifier={issueIdentifier}
+          documentKey={documentKey}
         />
       )}
-      {documentTitle && <PayloadField label="Plan" value={documentTitle} />}
-      {planRevisionNumber !== null && (
-        <PayloadField label="Revision" value={`#${planRevisionNumber}`} />
-      )}
-      {complexity && <PayloadField label="Complexity" value={complexity} />}
-      <PayloadField label="Next agent" value={hasUiSection ? "mockup-designer" : "implementer"} />
       {visibleNotes && (
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
