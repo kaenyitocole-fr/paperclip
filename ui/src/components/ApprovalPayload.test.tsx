@@ -127,4 +127,100 @@ describe("ApprovalPayloadRenderer", () => {
       root.unmount();
     });
   });
+
+  it("renders kaeny_approval HTML mockup attachment in a sandboxed iframe", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ApprovalPayloadRenderer
+          type="kaeny_approval"
+          payload={{
+            issueIdentifier: "KIPC-15",
+            issueTitle: "Render mockup attachments inline",
+            complexity: "medium",
+            hasUiSection: true,
+            mockupAttachmentUrl:
+              "http://localhost:8080/api/attachments/abc/index.html",
+            mockupAttachmentName: "index.html",
+            mockupAttachmentMimeType: "text/html",
+          }}
+        />,
+      );
+    });
+
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe?.getAttribute("src")).toBe(
+      "http://localhost:8080/api/attachments/abc/index.html",
+    );
+    const sandbox = iframe?.getAttribute("sandbox") ?? "";
+    expect(sandbox.split(/\s+/)).toContain("allow-scripts");
+    expect(sandbox.split(/\s+/)).toContain("allow-popups");
+    expect(sandbox.split(/\s+/)).not.toContain("allow-same-origin");
+    expect(container.textContent).toContain("Open in new tab");
+    expect(container.textContent).toContain("Loading mockup");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("falls back to a download link for non-HTML kaeny_approval attachments", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ApprovalPayloadRenderer
+          type="kaeny_approval"
+          payload={{
+            issueIdentifier: "KIPC-15",
+            complexity: "medium",
+            hasUiSection: true,
+            mockupAttachmentUrl:
+              "http://localhost:8080/api/attachments/abc/spec.pdf",
+            mockupAttachmentName: "spec.pdf",
+            mockupAttachmentMimeType: "application/pdf",
+          }}
+        />,
+      );
+    });
+
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.textContent).toContain("spec.pdf");
+    expect(container.textContent).toContain("Download");
+    const link = container.querySelector(
+      'a[href="http://localhost:8080/api/attachments/abc/spec.pdf"]',
+    );
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("target")).toBe("_blank");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("renders kaeny_approval without a preview when no attachment is provided", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ApprovalPayloadRenderer
+          type="kaeny_approval"
+          payload={{
+            issueIdentifier: "KIPC-15",
+            complexity: "medium",
+            hasUiSection: false,
+          }}
+        />,
+      );
+    });
+
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.textContent).not.toContain("Mockup");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

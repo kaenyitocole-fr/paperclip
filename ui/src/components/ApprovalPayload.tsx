@@ -8,6 +8,9 @@ import {
   Image as ImageIcon,
   HelpCircle,
   UserCheck,
+  ExternalLink,
+  Download,
+  FileCode,
 } from "lucide-react";
 import { formatCents } from "../lib/utils";
 
@@ -421,6 +424,86 @@ export function ClarificationRequestPayload({ payload }: { payload: Record<strin
 
 const KAENY_NOTES_COLLAPSE_THRESHOLD = 320;
 
+const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+
+function isHtmlAttachment(url: string, mimeType: string | null, name: string | null): boolean {
+  if (mimeType && HTML_MIME_TYPES.has(mimeType.toLowerCase())) return true;
+  const candidate = (name ?? url).toLowerCase().split(/[?#]/)[0];
+  return candidate.endsWith(".html") || candidate.endsWith(".htm");
+}
+
+export function MockupAttachmentPreview({
+  url,
+  name,
+  mimeType,
+}: {
+  url: string;
+  name: string | null;
+  mimeType: string | null;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const isHtml = isHtmlAttachment(url, mimeType, name);
+  const displayName = name ?? url;
+
+  if (!isHtml) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
+          <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-foreground/90">{displayName}</span>
+          {mimeType && (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {mimeType}
+            </span>
+          )}
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 text-xs text-primary underline-offset-2 hover:underline"
+        >
+          Download
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <FileCode className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate font-mono">{displayName}</span>
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/70 bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Open in new tab
+        </a>
+      </div>
+      <div className="relative h-[600px] overflow-hidden rounded-lg border border-border/70 bg-background">
+        {!loaded && (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted/40 text-xs text-muted-foreground">
+            Loading mockup…
+          </div>
+        )}
+        <iframe
+          src={url}
+          title={displayName}
+          sandbox="allow-scripts allow-popups"
+          className="h-full w-full"
+          onLoad={() => setLoaded(true)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function KaenyApprovalPayload({ payload }: { payload: Record<string, unknown> }) {
   const issueIdentifier = firstNonEmptyString(payload.issueIdentifier);
   const issueTitle = firstNonEmptyString(payload.issueTitle);
@@ -430,6 +513,9 @@ export function KaenyApprovalPayload({ payload }: { payload: Record<string, unkn
   const complexity = firstNonEmptyString(payload.complexity);
   const planReviewerNotes = firstNonEmptyString(payload.planReviewerNotes);
   const hasUiSection = payload.hasUiSection === true;
+  const mockupAttachmentUrl = firstNonEmptyString(payload.mockupAttachmentUrl);
+  const mockupAttachmentName = firstNonEmptyString(payload.mockupAttachmentName);
+  const mockupAttachmentMimeType = firstNonEmptyString(payload.mockupAttachmentMimeType);
   const [expanded, setExpanded] = useState(false);
   const isLong =
     planReviewerNotes != null && planReviewerNotes.length > KAENY_NOTES_COLLAPSE_THRESHOLD;
@@ -453,6 +539,18 @@ export function KaenyApprovalPayload({ payload }: { payload: Record<string, unkn
       )}
       {complexity && <PayloadField label="Complexity" value={complexity} />}
       <PayloadField label="Next agent" value={hasUiSection ? "mockup-designer" : "implementer"} />
+      {mockupAttachmentUrl && (
+        <div className="mt-3 space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Mockup
+          </p>
+          <MockupAttachmentPreview
+            url={mockupAttachmentUrl}
+            name={mockupAttachmentName}
+            mimeType={mockupAttachmentMimeType}
+          />
+        </div>
+      )}
       {visibleNotes && (
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
