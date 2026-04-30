@@ -81,11 +81,15 @@ describe("runAutoPr", () => {
   });
 
   it("returns existing PR URL when one is already open", async () => {
-    const { exec } = makeExec([
+    const { exec, calls } = makeExec([
       { match: (c) => c.args.includes("--git-dir"), result: { stdout: ".git" } },
       { match: (c) => c.args.includes("--verify") && c.args.includes("feat/x"), result: { stdout: "abc" } },
       { match: (c) => c.file === "git" && c.args.at(-1) === "remote", result: { stdout: "fork\norigin\n" } },
       { match: (c) => c.args.includes("symbolic-ref"), result: { stdout: "refs/remotes/fork/master\n" } },
+      {
+        match: (c) => c.file === "git" && c.args.includes("get-url") && c.args.includes("fork"),
+        result: { stdout: "https://github.com/kaenyitocole-fr/paperclip.git\n" },
+      },
       { match: (c) => c.args.includes("rev-list"), result: { stdout: "1\n" } },
       { match: (c) => c.file === "git" && c.args.includes("push"), result: { stdout: "" } },
       { match: (c) => c.file === "which", result: { stdout: "/usr/bin/gh" } },
@@ -96,30 +100,70 @@ describe("runAutoPr", () => {
     ]);
     const result = await runAutoPr(baseInput, { exec, pathExists: async () => true });
     expect(result).toEqual({ prUrl: "https://github.com/x/y/pull/42", reason: "already_open" });
+    const list = calls.find((c) => c.file === "gh" && c.args[1] === "list");
+    expect(list?.args).toContain("--repo");
+    expect(list?.args).toContain("kaenyitocole-fr/paperclip");
   });
 
-  it("creates a draft PR and returns its URL", async () => {
+  it("creates a PR and returns its URL", async () => {
     const { exec, calls } = makeExec([
       { match: (c) => c.args.includes("--git-dir"), result: { stdout: ".git" } },
       { match: (c) => c.args.includes("--verify") && c.args.includes("feat/x"), result: { stdout: "abc" } },
       { match: (c) => c.file === "git" && c.args.at(-1) === "remote", result: { stdout: "origin\n" } },
       { match: (c) => c.args.includes("symbolic-ref"), result: { stdout: "refs/remotes/origin/main\n" } },
+      {
+        match: (c) => c.file === "git" && c.args.includes("get-url") && c.args.includes("origin"),
+        result: { stdout: "git@github.com:x/y.git\n" },
+      },
       { match: (c) => c.args.includes("rev-list"), result: { stdout: "3\n" } },
       { match: (c) => c.file === "git" && c.args.includes("push"), result: { stdout: "" } },
       { match: (c) => c.file === "which", result: { stdout: "/usr/bin/gh" } },
       { match: (c) => c.file === "gh" && c.args[1] === "list", result: { stdout: "[]" } },
       {
         match: (c) => c.file === "gh" && c.args[1] === "create",
-        result: { stdout: "Creating draft pull request\nhttps://github.com/x/y/pull/99\n" },
+        result: { stdout: "Creating pull request\nhttps://github.com/x/y/pull/99\n" },
       },
     ]);
     const result = await runAutoPr(baseInput, { exec, pathExists: async () => true });
     expect(result).toEqual({ prUrl: "https://github.com/x/y/pull/99", reason: "created" });
     const create = calls.find((c) => c.file === "gh" && c.args[1] === "create");
-    expect(create?.args).toContain("--draft");
     expect(create?.args).toContain("--base");
     expect(create?.args).toContain("main");
     expect(create?.args).toContain(baseInput.issueTitle);
+    expect(create?.args).toContain("--repo");
+    expect(create?.args).toContain("x/y");
+  });
+
+  it("targets the fork remote, not origin, when both remotes exist", async () => {
+    const { exec, calls } = makeExec([
+      { match: (c) => c.args.includes("--git-dir"), result: { stdout: ".git" } },
+      { match: (c) => c.args.includes("--verify") && c.args.includes("feat/x"), result: { stdout: "abc" } },
+      { match: (c) => c.file === "git" && c.args.at(-1) === "remote", result: { stdout: "origin\nfork\n" } },
+      { match: (c) => c.args.includes("symbolic-ref"), result: { stdout: "refs/remotes/fork/master\n" } },
+      {
+        match: (c) => c.file === "git" && c.args.includes("get-url") && c.args.includes("fork"),
+        result: { stdout: "https://github.com/kaenyitocole-fr/paperclip.git\n" },
+      },
+      { match: (c) => c.args.includes("rev-list"), result: { stdout: "2\n" } },
+      { match: (c) => c.file === "git" && c.args.includes("push"), result: { stdout: "" } },
+      { match: (c) => c.file === "which", result: { stdout: "/usr/bin/gh" } },
+      { match: (c) => c.file === "gh" && c.args[1] === "list", result: { stdout: "[]" } },
+      {
+        match: (c) => c.file === "gh" && c.args[1] === "create",
+        result: { stdout: "https://github.com/kaenyitocole-fr/paperclip/pull/8\n" },
+      },
+    ]);
+    const result = await runAutoPr(baseInput, { exec, pathExists: async () => true });
+    expect(result.reason).toBe("created");
+
+    const push = calls.find((c) => c.file === "git" && c.args.includes("push"));
+    expect(push?.args).toContain("fork");
+    expect(push?.args).not.toContain("origin");
+
+    const create = calls.find((c) => c.file === "gh" && c.args[1] === "create");
+    expect(create?.args).toContain("--repo");
+    expect(create?.args).toContain("kaenyitocole-fr/paperclip");
+    expect(create?.args).not.toContain("paperclipai/paperclip");
   });
 
   it("reports push_failed when git push throws", async () => {
